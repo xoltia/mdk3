@@ -1,6 +1,7 @@
 mdk3
-queue
 *.exe
 *.png
 *.sh
 *.bat
+queue_data
+dist

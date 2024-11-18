@@ -3,10 +3,12 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/url"
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/diamondburned/arikawa/v3/api"
@@ -14,6 +16,7 @@ import (
 	"github.com/diamondburned/arikawa/v3/discord"
 	"github.com/diamondburned/arikawa/v3/state"
 	"github.com/diamondburned/arikawa/v3/utils/json/option"
+	"github.com/xoltia/mdk3/queue"
 )
 
 var commands = []api.CreateCommandData{
@@ -79,13 +82,13 @@ var commands = []api.CreateCommandData{
 
 type queueCommandHandler struct {
 	*cmdroute.Router
-	s         *state.State
-	q         *queue
-	pageSize  int
-	userLimit int
-	// gaurded by queue mutex
-	userCounts map[string]int
-	adminRoles []discord.RoleID
+	s            *state.State
+	q            *queue.Queue
+	pageSize     int
+	userLimit    int
+	userCountsMu sync.Mutex
+	userCounts   map[string]int
+	adminRoles   []discord.RoleID
 }
 
 type queueCommandHandlerOption func(*queueCommandHandler)
@@ -114,7 +117,7 @@ func withAdminRoles(roles []string) queueCommandHandlerOption {
 // 	}
 // }
 
-func newHandler(s *state.State, q *queue, options ...queueCommandHandlerOption) *queueCommandHandler {
+func newHandler(s *state.State, q *queue.Queue, options ...queueCommandHandlerOption) *queueCommandHandler {
 	h := &queueCommandHandler{
 		s:          s,
 		q:          q,
@@ -128,9 +131,10 @@ func newHandler(s *state.State, q *queue, options ...queueCommandHandlerOption) 
 		opt(h)
 	}
 
-	for _, song := range q.songs {
+	q.Iterate(func(song queue.QueuedSong) bool {
 		h.userCounts[song.UserID]++
-	}
+		return true
+	})
 
 	h.s.AddInteractionHandlerFunc(h.handleComponentInteraction)
 	h.Router = cmdroute.NewRouter()
@@ -147,6 +151,8 @@ func newHandler(s *state.State, q *queue, options ...queueCommandHandlerOption) 
 // decrementUserCount decrements the user count for the given user ID
 // (such as when a song is dequeued). Must have the queue lock before calling.
 func (h *queueCommandHandler) decrementUserCount(userID string) {
+	h.userCountsMu.Lock()
+	defer h.userCountsMu.Unlock()
 	if count := h.userCounts[userID]; count > 0 {
 		h.userCounts[userID]--
 	}
@@ -175,17 +181,19 @@ func (h *queueCommandHandler) cmdEnqueue(ctx context.Context, data cmdroute.Comm
 		return errorResponse(err)
 	}
 
-	s := song{
+	s := queue.NewSong{
 		UserID:       data.Event.Member.User.ID.String(),
 		Title:        video.Title,
 		SongURL:      video.URL,
 		ThumbnailURL: video.Thumbnail,
-		Duration:     duration(video.Duration),
+		Duration:     video.Duration,
 	}
 
-	h.q.mu.Lock()
-	defer h.q.mu.Unlock()
+	tx := h.q.BeginTxn(true)
+	defer tx.Discard()
 
+	h.userCountsMu.Lock()
+	defer h.userCountsMu.Unlock()
 	userCount := h.userCounts[s.UserID]
 
 	if userCount >= h.userLimit {
@@ -196,23 +204,49 @@ func (h *queueCommandHandler) cmdEnqueue(ctx context.Context, data cmdroute.Comm
 		}
 	}
 
-	queued := h.q.enqueue(s)
-	queuePosition := h.q.len()
-	queueDuration := time.Duration(0)
+	queuedID, err := tx.Enqueue(s)
+	if err != nil {
+		return errorResponse(err)
+	}
+	h.userCounts[s.UserID]++
 
-	if !h.q.lastDequeueTime.IsZero() {
-		queueDuration += h.q.lastDequeueDuration
-		queueDuration -= time.Since(h.q.lastDequeueTime)
+	queued, err := tx.FindByID(queuedID)
+	if err != nil {
+		log.Println("cannot find queued song:", err)
+		return errorResponse(err)
 	}
 
-	for _, song := range h.q.songs {
-		queueDuration += time.Duration(song.Duration)
+	queuePosition, err := tx.Count()
+	if err != nil {
+		log.Println("cannot get queue position:", err)
+		return errorResponse(err)
+	}
+	queueDuration := time.Duration(0)
+
+	// TODO: Reimplement
+	// if !h.q.lastDequeueTime.IsZero() {
+	// 	queueDuration += h.q.lastDequeueDuration
+	// 	queueDuration -= time.Since(h.q.lastDequeueTime)
+	// }
+
+	err = tx.Iterate(func(song queue.QueuedSong) bool {
+		queueDuration += song.Duration
+		return true
+	})
+
+	if err != nil {
+		return errorResponse(err)
 	}
 
 	playTimeString := "Next"
 	if queuePosition > 1 {
 		playTime := time.Now().Add(queueDuration)
 		playTimeString = fmt.Sprintf("<t:%d:t>", playTime.Unix())
+	}
+
+	if err = tx.Commit(); err != nil {
+		log.Println("cannot commit transaction:", err)
+		return errorResponse(err)
 	}
 
 	embed := discord.NewEmbed()
@@ -241,10 +275,16 @@ func (h *queueCommandHandler) cmdList(ctx context.Context, data cmdroute.Command
 	embed := discord.NewEmbed()
 	embed.Title = "Current Queue"
 
-	h.q.mu.RLock()
-	defer h.q.mu.RUnlock()
+	tx := h.q.BeginTxn(false)
+	defer tx.Discard()
 
-	if h.q.len() == 0 {
+	empty, err := tx.Empty()
+	if err != nil {
+		log.Println("cannot check if queue is empty:", err)
+		return errorResponse(err)
+	}
+
+	if empty {
 		embed.Description = "The queue is empty."
 		return &api.InteractionResponseData{
 			Embeds:          &[]discord.Embed{*embed},
@@ -253,7 +293,13 @@ func (h *queueCommandHandler) cmdList(ctx context.Context, data cmdroute.Command
 		}
 	}
 
-	for i, song := range h.q.peek(h.pageSize) {
+	songs, err := tx.List(0, h.pageSize)
+	if err != nil {
+		log.Println("cannot list songs:", err)
+		return errorResponse(err)
+	}
+
+	for i, song := range songs {
 		embed.Fields = append(embed.Fields, discord.EmbedField{
 			Name:  fmt.Sprintf("%d. %s", i+1, song.Title),
 			Value: fmt.Sprintf("ID: %s | Queued by <@%s>", song.Slug, song.UserID),
@@ -268,7 +314,13 @@ func (h *queueCommandHandler) cmdList(ctx context.Context, data cmdroute.Command
 		},
 	}
 
-	if h.q.len() > h.pageSize {
+	count, err := tx.Count()
+	if err != nil {
+		log.Println("cannot get queue count:", err)
+		return errorResponse(err)
+	}
+
+	if count > h.pageSize {
 		buttons = append(buttons, &discord.ButtonComponent{
 			Label:    "Next",
 			Style:    discord.PrimaryButtonStyle(),
@@ -295,12 +347,17 @@ func (h *queueCommandHandler) cmdRemove(_ context.Context, data cmdroute.Command
 		return errorResponse(err)
 	}
 
-	h.q.mu.Lock()
-	defer h.q.mu.Unlock()
+	tx := h.q.BeginTxn(true)
+	defer tx.Discard()
 
 	slug := options.ID
-	idx := h.q.findIndexBySlug(slug)
-	if idx == -1 {
+	song, err := tx.FindBySlug(slug)
+	if err != nil && err != queue.ErrSongNotFound {
+		log.Println("cannot find song by slug:", err)
+		return errorResponse(err)
+	}
+
+	if err == queue.ErrSongNotFound {
 		return &api.InteractionResponseData{
 			Content:         option.NewNullableString("Song not found."),
 			Flags:           discord.EphemeralMessage,
@@ -308,7 +365,6 @@ func (h *queueCommandHandler) cmdRemove(_ context.Context, data cmdroute.Command
 		}
 	}
 
-	song := h.q.songs[idx]
 	member := data.Event.Member
 	if member.User.ID.String() != song.UserID && !h.isAdmin(member) {
 		return &api.InteractionResponseData{
@@ -318,7 +374,17 @@ func (h *queueCommandHandler) cmdRemove(_ context.Context, data cmdroute.Command
 		}
 	}
 
-	h.q.removeIndex(idx)
+	if err := tx.Remove(song.ID); err != nil {
+		log.Println("cannot remove song by slug:", err)
+		return errorResponse(err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		log.Println("cannot commit transaction:", err)
+		return errorResponse(err)
+	}
+
+	h.decrementUserCount(song.UserID)
 
 	return &api.InteractionResponseData{
 		Content:         option.NewNullableString("Song removed."),
@@ -351,12 +417,17 @@ func (h *queueCommandHandler) cmdSwap(ctx context.Context, data cmdroute.Command
 		return errorResponse(err)
 	}
 
-	h.q.mu.Lock()
-	defer h.q.mu.Unlock()
+	tx := h.q.BeginTxn(true)
+	defer tx.Discard()
 
 	slug := options.ID
-	idx := h.q.findIndexBySlug(slug)
-	if idx == -1 {
+	song, err := tx.FindBySlug(slug)
+	if err != nil && err != queue.ErrSongNotFound {
+		log.Println("cannot find song by slug:", err)
+		return errorResponse(err)
+	}
+
+	if err == queue.ErrSongNotFound {
 		return &api.InteractionResponseData{
 			Content:         option.NewNullableString("Song not found."),
 			Flags:           discord.EphemeralMessage,
@@ -365,7 +436,7 @@ func (h *queueCommandHandler) cmdSwap(ctx context.Context, data cmdroute.Command
 	}
 
 	member := data.Event.Member
-	if member.User.ID.String() != h.q.songs[idx].UserID && !h.isAdmin(member) {
+	if member.User.ID.String() != song.UserID && !h.isAdmin(member) {
 		return &api.InteractionResponseData{
 			Content:         option.NewNullableString("You are not allowed to swap this song."),
 			Flags:           discord.EphemeralMessage,
@@ -373,14 +444,24 @@ func (h *queueCommandHandler) cmdSwap(ctx context.Context, data cmdroute.Command
 		}
 	}
 
-	h.q.update(idx, song{
+	fmt.Println("song", song)
+	err = tx.Update(song.ID, queue.NewSong{
+		UserID:       song.UserID,
 		Title:        video.Title,
 		SongURL:      video.URL,
 		ThumbnailURL: video.Thumbnail,
-		Duration:     duration(video.Duration),
+		Duration:     video.Duration,
 	})
+	if err != nil {
+		log.Println("cannot update song by slug:", err)
+		return errorResponse(err)
+	}
 
-	// TODO: show earliest play time
+	if err := tx.Commit(); err != nil {
+		log.Println("cannot commit transaction:", err)
+		return errorResponse(err)
+	}
+
 	embed := discord.NewEmbed()
 	embed.Title = "Song Swapped"
 	embed.Description = video.Title
@@ -394,51 +475,52 @@ func (h *queueCommandHandler) cmdSwap(ctx context.Context, data cmdroute.Command
 }
 
 func (h *queueCommandHandler) cmdMove(_ context.Context, data cmdroute.CommandData) *api.InteractionResponseData {
-	var options struct {
-		ID       string `discord:"id"`
-		Position int    `discord:"position"`
-	}
+	return errorResponse(fmt.Errorf("not implemented"))
+	// var options struct {
+	// 	ID       string `discord:"id"`
+	// 	Position int    `discord:"position"`
+	// }
 
-	if err := data.Options.Unmarshal(&options); err != nil {
-		return errorResponse(err)
-	}
+	// if err := data.Options.Unmarshal(&options); err != nil {
+	// 	return errorResponse(err)
+	// }
 
-	if !h.isAdmin(data.Event.Member) {
-		return &api.InteractionResponseData{
-			Content:         option.NewNullableString("You are not allowed to move songs."),
-			Flags:           discord.EphemeralMessage,
-			AllowedMentions: &api.AllowedMentions{},
-		}
-	}
+	// if !h.isAdmin(data.Event.Member) {
+	// 	return &api.InteractionResponseData{
+	// 		Content:         option.NewNullableString("You are not allowed to move songs."),
+	// 		Flags:           discord.EphemeralMessage,
+	// 		AllowedMentions: &api.AllowedMentions{},
+	// 	}
+	// }
 
-	h.q.mu.Lock()
-	defer h.q.mu.Unlock()
+	// h.q.mu.Lock()
+	// defer h.q.mu.Unlock()
 
-	slug := options.ID
-	idx := h.q.findIndexBySlug(slug)
-	if idx == -1 {
-		return &api.InteractionResponseData{
-			Content:         option.NewNullableString("Song not found."),
-			Flags:           discord.EphemeralMessage,
-			AllowedMentions: &api.AllowedMentions{},
-		}
-	}
+	// slug := options.ID
+	// idx := h.q.findIndexBySlug(slug)
+	// if idx == -1 {
+	// 	return &api.InteractionResponseData{
+	// 		Content:         option.NewNullableString("Song not found."),
+	// 		Flags:           discord.EphemeralMessage,
+	// 		AllowedMentions: &api.AllowedMentions{},
+	// 	}
+	// }
 
-	if options.Position < 1 || options.Position > h.q.len() {
-		return &api.InteractionResponseData{
-			Content:         option.NewNullableString("Invalid position."),
-			Flags:           discord.EphemeralMessage,
-			AllowedMentions: &api.AllowedMentions{},
-		}
-	}
+	// if options.Position < 1 || options.Position > h.q.len() {
+	// 	return &api.InteractionResponseData{
+	// 		Content:         option.NewNullableString("Invalid position."),
+	// 		Flags:           discord.EphemeralMessage,
+	// 		AllowedMentions: &api.AllowedMentions{},
+	// 	}
+	// }
 
-	h.q.move(idx, options.Position-1)
+	// h.q.move(idx, options.Position-1)
 
-	return &api.InteractionResponseData{
-		Content:         option.NewNullableString("Song moved."),
-		Flags:           discord.EphemeralMessage,
-		AllowedMentions: &api.AllowedMentions{},
-	}
+	// return &api.InteractionResponseData{
+	// 	Content:         option.NewNullableString("Song moved."),
+	// 	Flags:           discord.EphemeralMessage,
+	// 	AllowedMentions: &api.AllowedMentions{},
+	// }
 }
 
 func (h *queueCommandHandler) isAdmin(member *discord.Member) bool {
@@ -480,10 +562,19 @@ func (h *queueCommandHandler) handleListPage(pageNumber int) *api.InteractionRes
 	embed := discord.NewEmbed()
 	embed.Title = "Current Queue"
 
-	h.q.mu.RLock()
-	defer h.q.mu.RUnlock()
+	tx := h.q.BeginTxn(false)
+	defer tx.Discard()
 
-	if h.q.len() == 0 {
+	empty, err := tx.Empty()
+	if err != nil {
+		log.Println("cannot check if queue is empty:", err)
+		return &api.InteractionResponse{
+			Type: api.UpdateMessage,
+			Data: errorResponse(err),
+		}
+	}
+
+	if empty {
 		embed.Description = "The queue is empty."
 		return &api.InteractionResponse{
 			Type: api.UpdateMessage,
@@ -503,6 +594,15 @@ func (h *queueCommandHandler) handleListPage(pageNumber int) *api.InteractionRes
 		}
 	}
 
+	count, err := tx.Count()
+	if err != nil {
+		log.Println("cannot get queue count:", err)
+		return &api.InteractionResponse{
+			Type: api.UpdateMessage,
+			Data: errorResponse(err),
+		}
+	}
+
 	if pageNumber < 0 {
 		pageNumber = 0
 	}
@@ -510,15 +610,24 @@ func (h *queueCommandHandler) handleListPage(pageNumber int) *api.InteractionRes
 	start := pageNumber * h.pageSize
 	end := start + h.pageSize
 
-	if start >= len(h.q.songs) {
-		start = max(0, len(h.q.songs)-h.pageSize)
+	if start >= count {
+		start = max(0, count-h.pageSize)
 	}
 
-	if end > len(h.q.songs) {
-		end = len(h.q.songs)
+	if end > count {
+		end = count
 	}
 
-	for i, song := range h.q.songs[start:end] {
+	songs, err := tx.List(start, h.pageSize)
+	if err != nil {
+		log.Println("cannot list songs:", err)
+		return &api.InteractionResponse{
+			Type: api.UpdateMessage,
+			Data: errorResponse(err),
+		}
+	}
+
+	for i, song := range songs {
 		embed.Fields = append(embed.Fields, discord.EmbedField{
 			Name:  fmt.Sprintf("%d. %s", start+i+1, song.Title),
 			Value: fmt.Sprintf("ID: %s | Queued by <@%s>", song.Slug, song.UserID),
@@ -544,7 +653,7 @@ func (h *queueCommandHandler) handleListPage(pageNumber int) *api.InteractionRes
 		Label:    "Next",
 		Style:    discord.PrimaryButtonStyle(),
 		CustomID: discord.ComponentID(fmt.Sprintf("list_page:%d:%d", pageNumber+1, time.Now().UnixMilli())),
-		Disabled: end == len(h.q.songs),
+		Disabled: end == count,
 	})
 
 	return &api.InteractionResponse{

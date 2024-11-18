@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/diamondburned/arikawa/v3/discord"
+	"github.com/xoltia/mdk3/queue"
 	"github.com/xoltia/mpv"
 )
 
@@ -16,7 +17,7 @@ func showOSD(mpvClient *mpv.Client, text string) error {
 	return err
 }
 
-func loopPlayMPV(ctx context.Context, q *queue, h *queueCommandHandler, mpvClient *mpv.Client) {
+func loopPlayMPV(ctx context.Context, q *queue.Queue, h *queueCommandHandler, mpvClient *mpv.Client) {
 	guildSnowflake, err := discord.ParseSnowflake(*guildID)
 	if err != nil {
 		log.Fatalln("cannot parse guild id:", err)
@@ -33,17 +34,35 @@ func loopPlayMPV(ctx context.Context, q *queue, h *queueCommandHandler, mpvClien
 	}
 
 	for {
-		q.mu.Lock()
-		song, err := q.dequeue(ctx)
+		tx := q.BeginTxn(true)
+		song, err := tx.Dequeue()
 		if err != nil {
+			if err == queue.ErrQueueEmpty {
+				tx.Discard()
+				log.Println("queue is empty")
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(1 * time.Second):
+					continue
+				}
+			}
+
 			log.Println("cannot dequeue:", err)
-			q.mu.Unlock()
+			tx.Discard()
+			break
+		}
+		next, err := tx.List(0, 10)
+		if err != nil {
+			log.Println("cannot list:", err)
+			tx.Discard()
+			break
+		}
+		if err = tx.Commit(); err != nil {
+			log.Println("cannot commit:", err)
 			break
 		}
 		h.decrementUserCount(song.UserID)
-		next := q.peek(10)
-		q.mu.Unlock()
-
 		log.Println("playing", song.Title)
 
 		var username string

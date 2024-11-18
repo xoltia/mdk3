@@ -16,12 +16,12 @@ import (
 	"github.com/diamondburned/arikawa/v3/gateway"
 	"github.com/diamondburned/arikawa/v3/state"
 	"github.com/wader/goutubedl"
+	"github.com/xoltia/mdk3/queue"
 	"github.com/xoltia/mpv"
 )
 
 var (
-	queuePath    = flag.String("queue-path", ".", "path to the queue archive")
-	backupTimer  = flag.Duration("backup-timer", 5*time.Second, "time between backups")
+	queuePath    = flag.String("queue-path", "queue_data", "path to the queue archive")
 	playbackTime = flag.Duration("playback-time", 30*time.Second, "time to wait before playing the next song")
 	discordToken = flag.String("discord-token", "", "Discord bot token")
 	ytdlpPath    = flag.String("ytdlp-path", "", "path to yt-dlp binary")
@@ -64,18 +64,11 @@ func main() {
 		}
 	}
 
-	songs, err := recoverArchive(*queuePath)
+	q, err := queue.OpenQueue(*queuePath)
 	if err != nil {
-		panic(err)
+		log.Fatalln("cannot open queue:", err)
 	}
-
-	q := newQueue()
-	q.restore(songs)
-
-	a := newArchiver(q, *backupTimer)
-	a.path = *queuePath
-	go a.run()
-	defer a.stop()
+	defer q.Close()
 
 	if *discordToken == "" {
 		log.Fatalln("no discord token provided")

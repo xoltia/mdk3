@@ -18,6 +18,7 @@ import (
 	"github.com/fogleman/gg"
 	"github.com/golang/freetype"
 	"github.com/golang/freetype/truetype"
+	"github.com/xoltia/mdk3/queue"
 	xdraw "golang.org/x/image/draw"
 )
 
@@ -62,7 +63,12 @@ func downloadThumbnail(url string) (image.Image, error) {
 	return img, nil
 }
 
-func writePreviewPoster(song queuedSong, username string, nextSongs []queuedSong, thumbnail image.Image) (string, error) {
+func writePreviewPoster(
+	song queue.QueuedSong,
+	username string,
+	nextSongs []queue.QueuedSong,
+	thumbnail image.Image,
+) (string, error) {
 	poster, err := os.Create(previewPath)
 	if err != nil {
 		return "", err
