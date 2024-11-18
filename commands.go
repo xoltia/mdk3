@@ -199,13 +199,19 @@ func (h *queueCommandHandler) cmdEnqueue(ctx context.Context, data cmdroute.Comm
 	queued := h.q.enqueue(s)
 	queuePosition := h.q.len()
 	queueDuration := time.Duration(0)
+
+	if !h.q.lastDequeueTime.IsZero() {
+		queueDuration += h.q.lastDequeueDuration
+		queueDuration -= time.Since(h.q.lastDequeueTime)
+	}
+
 	for _, song := range h.q.songs {
 		queueDuration += time.Duration(song.Duration)
 	}
 
 	playTimeString := "Next"
 	if queuePosition > 1 {
-		playTime := time.Now().Add(queueDuration).Add(time.Minute).Truncate(time.Minute)
+		playTime := time.Now().Add(queueDuration)
 		playTimeString = fmt.Sprintf("<t:%d:t>", playTime.Unix())
 	}
 

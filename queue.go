@@ -50,12 +50,14 @@ type queuedSong struct {
 // Locks must be manually acquired before calling any methods,
 // except for update and remove.
 type queue struct {
-	mu       sync.RWMutex
-	id       int
-	cond     *sync.Cond
-	songs    []queuedSong
-	slugs    *slugGenerator
-	duration time.Duration
+	mu                  sync.RWMutex
+	id                  int
+	cond                *sync.Cond
+	songs               []queuedSong
+	slugs               *slugGenerator
+	duration            time.Duration
+	lastDequeueTime     time.Time
+	lastDequeueDuration time.Duration
 }
 
 func newQueue() *queue {
@@ -124,6 +126,8 @@ func (q *queue) dequeue(ctx context.Context) (s queuedSong, err error) {
 	q.duration -= time.Duration(s.Duration)
 	q.slugs.decrement(s.Slug)
 	q.songs = q.songs[1:]
+	q.lastDequeueTime = time.Now()
+	q.lastDequeueDuration = time.Duration(s.Duration)
 	return
 }
 
