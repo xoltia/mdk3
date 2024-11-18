@@ -3,7 +3,6 @@ module github.com/xoltia/mdk3
 go 1.23.2
 
 require (
-	github.com/blang/mpv v0.0.0-20160810175505-d56d7352e068
 	github.com/diamondburned/arikawa/v3 v3.4.0
 	github.com/fogleman/gg v1.3.0
 	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0

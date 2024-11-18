@@ -38,7 +38,7 @@ var (
 	loadingPath = filepath.Join(os.TempDir(), "mdk3-loading.png")
 )
 
-func downloadThumbnailAndResize(url string, w, h int) (image.Image, error) {
+func downloadThumbnail(url string) (image.Image, error) {
 	resp, err := http.Get(url)
 	if err != nil {
 		return nil, err
@@ -59,13 +59,10 @@ func downloadThumbnailAndResize(url string, w, h int) (image.Image, error) {
 		return nil, fmt.Errorf("cannot decode image: %w", err)
 	}
 
-	resized := image.NewRGBA(image.Rect(0, 0, w, h))
-	xdraw.ApproxBiLinear.Scale(resized, resized.Bounds(), img, img.Bounds(), xdraw.Over, nil)
-
-	return resized, nil
+	return img, nil
 }
 
-func writePreviewPoster(song queuedSong, username string, nextSongs []queuedSong) (string, error) {
+func writePreviewPoster(song queuedSong, username string, nextSongs []queuedSong, thumbnail image.Image) (string, error) {
 	poster, err := os.Create(previewPath)
 	if err != nil {
 		return "", err
@@ -73,10 +70,8 @@ func writePreviewPoster(song queuedSong, username string, nextSongs []queuedSong
 
 	defer poster.Close()
 
-	smallThumbnail, err := downloadThumbnailAndResize(song.ThumbnailURL, 1024, 576)
-	if err != nil {
-		return "", err
-	}
+	smallThumbnail := image.NewRGBA(image.Rect(0, 0, 1024, 576))
+	xdraw.ApproxBiLinear.Scale(smallThumbnail, smallThumbnail.Bounds(), thumbnail, thumbnail.Bounds(), xdraw.Over, nil)
 
 	face := truetype.NewFace(notoSansFont, &truetype.Options{
 		Size: 48,
@@ -107,7 +102,7 @@ func writePreviewPoster(song queuedSong, username string, nextSongs []queuedSong
 	return previewPath, dc.SavePNG(previewPath)
 }
 
-func writeLoadingPoster(song queuedSong) (string, error) {
+func writeLoadingPoster(thumbnail image.Image) (string, error) {
 	poster, err := os.Create(loadingPath)
 	if err != nil {
 		return "", err
@@ -115,13 +110,11 @@ func writeLoadingPoster(song queuedSong) (string, error) {
 
 	defer poster.Close()
 
-	thumbnail, err := downloadThumbnailAndResize(song.ThumbnailURL, 1920, 1080)
-	if err != nil {
-		return "", err
-	}
+	largeThumbnail := image.NewRGBA(image.Rect(0, 0, 1920, 1080))
+	xdraw.ApproxBiLinear.Scale(largeThumbnail, largeThumbnail.Bounds(), thumbnail, thumbnail.Bounds(), xdraw.Over, nil)
 
 	dc := gg.NewContext(1920, 1080)
-	dc.DrawImage(thumbnail, 0, 0)
+	dc.DrawImage(largeThumbnail, 0, 0)
 	dc.SetRGBA(0, 0, 0, 0.5)
 	dc.DrawRectangle(0, 0, 1920, 1080)
 	dc.Fill()

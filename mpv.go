@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"image"
 	"log"
 	"time"
 
@@ -59,8 +60,17 @@ playLoop:
 			}
 		}
 
+		var thumbnail image.Image
+		actualThumbnail, err := downloadThumbnail(song.ThumbnailURL)
+		if err != nil {
+			thumbnail = image.Black
+			log.Println("cannot download thumbnail:", err)
+		} else {
+			thumbnail = actualThumbnail
+		}
+
 		hasPoster := false
-		previewLocation, err := writePreviewPoster(song, username, next)
+		previewLocation, err := writePreviewPoster(song, username, next, thumbnail)
 		if err != nil {
 			log.Println("cannot write preview poster:", err)
 		} else {
@@ -76,7 +86,7 @@ playLoop:
 			continue
 		}
 
-		loadingLocation, err := writeLoadingPoster(song)
+		loadingLocation, err := writeLoadingPoster(thumbnail)
 		if err != nil {
 			log.Println("cannot write loading poster:", err)
 		} else {
