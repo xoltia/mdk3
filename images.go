@@ -6,6 +6,7 @@ import (
 	"image"
 	"net/http"
 	"os"
+	"path/filepath"
 
 	_ "embed"
 	_ "image/gif"
@@ -33,8 +34,8 @@ func init() {
 }
 
 var (
-	previewPath = "preview.png"
-	loadingPath = "loading.png"
+	previewPath = filepath.Join(os.TempDir(), "mdk3-preview.png")
+	loadingPath = filepath.Join(os.TempDir(), "mdk3-loading.png")
 )
 
 func downloadThumbnailAndResize(url string, w, h int) (image.Image, error) {
