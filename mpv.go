@@ -4,57 +4,14 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"os/exec"
-	"runtime"
 	"time"
 
-	"github.com/blang/mpv"
 	"github.com/diamondburned/arikawa/v3/discord"
+	"github.com/xoltia/mpv"
 )
 
-func getSocketPath() string {
-	switch runtime.GOOS {
-	case "windows":
-		return `\\.\pipe\mpvsocket`
-	default:
-		return "/tmp/mpvsocket"
-	}
-}
-
-func startMPV(ctx context.Context) *exec.Cmd {
-	cmd := exec.CommandContext(
-		ctx,
-		*mpvPath,
-		"--idle",
-		fmt.Sprintf("--input-ipc-server=%s", getSocketPath()),
-		"--fs",
-		"--force-window",
-	)
-
-	if err := cmd.Start(); err != nil {
-		log.Fatalln("cannot start mpv:", err)
-	}
-
-	return cmd
-}
-
-func acquireIPC(retries int) *mpv.IPCClient {
-	defer func() {
-		if r := recover(); r != nil {
-			if retries > 3 {
-				panic(r)
-			}
-			log.Println("failed to connect to mpv, retrying")
-			acquireIPC(retries + 1)
-		}
-	}()
-
-	time.Sleep(time.Second * time.Duration(1<<retries))
-	return mpv.NewIPCClient(getSocketPath())
-}
-
 func showOSD(mpvClient *mpv.Client, text string) error {
-	_, err := mpvClient.Exec("show-text", text)
+	_, err := mpvClient.Command("show-text", text)
 	return err
 }
 
@@ -107,14 +64,14 @@ playLoop:
 		if err != nil {
 			log.Println("cannot write preview poster:", err)
 		} else {
-			if err = mpvClient.Loadfile(previewLocation, mpv.LoadFileModeReplace); err != nil {
+			if err = mpvClient.LoadFile(previewLocation, mpv.LoadFileModeReplace); err != nil {
 				log.Println("cannot load preview poster:", err)
 				continue
 			}
 			hasPoster = true
 		}
 
-		if err = mpvClient.SetPause(true); err != nil {
+		if err = mpvClient.Pause(); err != nil {
 			log.Println("cannot set pause:", err)
 			continue
 		}
@@ -123,7 +80,7 @@ playLoop:
 		if err != nil {
 			log.Println("cannot write loading poster:", err)
 		} else {
-			if err = mpvClient.Loadfile(loadingLocation, mpv.LoadFileModeAppend); err != nil {
+			if err = mpvClient.LoadFile(loadingLocation, mpv.LoadFileModeAppend); err != nil {
 				log.Println("cannot load loading poster:", err)
 				continue
 			}
@@ -133,7 +90,7 @@ playLoop:
 		if !hasPoster {
 			mode = mpv.LoadFileModeReplace
 		}
-		if err = mpvClient.Loadfile(song.SongURL, mode); err != nil {
+		if err = mpvClient.LoadFile(song.SongURL, mode); err != nil {
 			log.Println("cannot load file:", err)
 			continue
 		}
@@ -149,7 +106,7 @@ playLoop:
 
 		// Change OSD font size
 		restoreFontSize := true
-		oldSize, err := mpvClient.GetFloatProperty("osd-font-size")
+		oldSize, err := mpvClient.GetPropertyFloat("osd-font-size")
 		if err != nil {
 			log.Println("cannot get OSD font size:", err)
 			restoreFontSize = false
@@ -167,7 +124,7 @@ playLoop:
 				select {
 				case <-time.After(time.Second):
 					timeLeft -= time.Second
-					paused, err := mpvClient.GetBoolProperty("pause")
+					paused, err := mpvClient.GetPropertyBool("pause")
 					if err != nil {
 						log.Println("cannot get pause state:", err)
 						continue
@@ -187,7 +144,7 @@ playLoop:
 		select {
 		case <-unpausedCh:
 		case <-time.After(*playbackTime):
-			if err = mpvClient.SetPause(false); err != nil {
+			if err = mpvClient.Play(); err != nil {
 				cancelUnpauseCheck()
 				log.Println("cannot set pause:", err)
 				continue
@@ -203,7 +160,7 @@ playLoop:
 		}
 
 		for {
-			idle, err := mpvClient.GetBoolProperty("idle-active")
+			idle, err := mpvClient.GetPropertyBool("idle-active")
 			if err != nil {
 				log.Println("cannot get idle state:", err)
 				continue playLoop

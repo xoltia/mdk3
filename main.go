@@ -11,12 +11,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/blang/mpv"
 	"github.com/diamondburned/arikawa/v3/api"
 	"github.com/diamondburned/arikawa/v3/discord"
 	"github.com/diamondburned/arikawa/v3/gateway"
 	"github.com/diamondburned/arikawa/v3/state"
 	"github.com/wader/goutubedl"
+	"github.com/xoltia/mpv"
 )
 
 var (
@@ -40,18 +40,23 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	mpvProcess := startMPV(ctx)
-	defer mpvProcess.Cancel()
+	mpvProcess := &mpv.Process{
+		Path: *mpvPath,
+		Args: []string{"--force-window"},
+	}
+	defer mpvProcess.Close()
+
+	mpvClient, err := mpvProcess.OpenClient()
+	if err != nil {
+		log.Fatalln("cannot open mpv client:", err)
+	}
+
 	go func() {
 		mpvProcess.Wait()
-		log.Println("mpv window closed, exiting")
 		cancel()
 	}()
-	log.Println("waiting for mpv to start")
-	ipcc := acquireIPC(0)
-	log.Println("connected to mpv")
 
-	mpvClient := mpv.NewClient(ipcc)
+	log.Println("connected to mpv")
 
 	if *queuePath != "" {
 		if err := os.MkdirAll(*queuePath, 0755); err != nil {
