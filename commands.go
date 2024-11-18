@@ -197,12 +197,33 @@ func (h *queueCommandHandler) cmdEnqueue(ctx context.Context, data cmdroute.Comm
 	}
 
 	queued := h.q.enqueue(s)
+	queuePosition := h.q.len()
+	queueDuration := time.Duration(0)
+	for _, song := range h.q.songs {
+		queueDuration += time.Duration(song.Duration)
+	}
+
+	playTimeString := "Next"
+	if queuePosition > 1 {
+		playTime := time.Now().Add(queueDuration).Add(time.Minute).Truncate(time.Minute)
+		playTimeString = fmt.Sprintf("<t:%d:t>", playTime.Unix())
+	}
 
 	embed := discord.NewEmbed()
 	embed.Title = "Song Enqueued"
 	embed.Description = s.Title
 	embed.Thumbnail = &discord.EmbedThumbnail{URL: s.ThumbnailURL}
 	embed.Footer = &discord.EmbedFooter{Text: fmt.Sprintf("ID: %s", queued.Slug)}
+	embed.Fields = append(embed.Fields, discord.EmbedField{
+		Name:   "Queue Position",
+		Value:  fmt.Sprintf("%d", queuePosition),
+		Inline: true,
+	})
+	embed.Fields = append(embed.Fields, discord.EmbedField{
+		Name:   "Earliest Play Time",
+		Value:  playTimeString,
+		Inline: true,
+	})
 
 	return &api.InteractionResponseData{
 		Embeds:          &[]discord.Embed{*embed},
