@@ -70,6 +70,8 @@ github.com/xoltia/mpv v0.0.0-20241118020452-c897dcceb42e h1:v2w+IpWprHQYcR9xw0g7
 github.com/xoltia/mpv v0.0.0-20241118020452-c897dcceb42e/go.mod h1:via4CTytFud1d70V6aUjUw7yTijAoLIrbMar7ZhH0XE=
 github.com/xoltia/mpv v0.0.0-20241118020741-57bf42e0aafe h1:1JHGe62errlgehBGCh4HQuPWA5X9XofLPXQirQK/ZLc=
 github.com/xoltia/mpv v0.0.0-20241118020741-57bf42e0aafe/go.mod h1:via4CTytFud1d70V6aUjUw7yTijAoLIrbMar7ZhH0XE=
+github.com/xoltia/mpv v0.0.0-20241118033157-a9df52fb0d3e h1:9d/ftqH+R0saSbRKimw0YY1d93dYi1LvDscEOm3+DuE=
+github.com/xoltia/mpv v0.0.0-20241118033157-a9df52fb0d3e/go.mod h1:via4CTytFud1d70V6aUjUw7yTijAoLIrbMar7ZhH0XE=
 github.com/yuin/goldmark v1.4.13/go.mod h1:6yULJ656Px+3vBD8DxQVa3kxgyrAnzto9xy5taEt/CY=
 golang.org/x/crypto v0.0.0-20190308221718-c2843e01d9a2/go.mod h1:djNgcEr1/C05ACkg1iLfiJU5Ep61QUkGW8qpdssI0+w=
 golang.org/x/crypto v0.0.0-20210921155107-089bfa567519/go.mod h1:GvvjBRRGRdwPK5ydBHafDWAxML/pGHZbMvKqRZ5+Abc=
