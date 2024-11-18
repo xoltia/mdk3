@@ -38,6 +38,8 @@ github.com/wader/osleaktest v0.0.0-20191111175233-f643b0fed071 h1:QkrG4Zr5OVFuC9
 github.com/wader/osleaktest v0.0.0-20191111175233-f643b0fed071/go.mod h1:XD6emOFPHVzb0+qQpiNOdPL2XZ0SRUM0N5JHuq6OmXo=
 github.com/xoltia/mpv v0.0.0-20241118033157-a9df52fb0d3e h1:9d/ftqH+R0saSbRKimw0YY1d93dYi1LvDscEOm3+DuE=
 github.com/xoltia/mpv v0.0.0-20241118033157-a9df52fb0d3e/go.mod h1:via4CTytFud1d70V6aUjUw7yTijAoLIrbMar7ZhH0XE=
+github.com/xoltia/mpv v0.0.0-20241118160153-e5d254646a55 h1:cltEhGcIa2kZ9/nz9MqLktXEDBTwq1PiicJwc8+Apds=
+github.com/xoltia/mpv v0.0.0-20241118160153-e5d254646a55/go.mod h1:via4CTytFud1d70V6aUjUw7yTijAoLIrbMar7ZhH0XE=
 golang.org/x/image v0.22.0 h1:UtK5yLUzilVrkjMAZAZ34DXGpASN8i8pj8g+O+yd10g=
 golang.org/x/image v0.22.0/go.mod h1:9hPFhljd4zZ1GNSIZJ49sqbp45GKK9t6w+iXvGqZUz4=
 golang.org/x/net v0.22.0 h1:9sGLhx7iRIHEiX0oAJ3MRZMUCElJgy7Br1nO+AMN3Tc=

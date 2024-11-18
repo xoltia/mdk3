@@ -180,7 +180,7 @@ func (h *queueCommandHandler) cmdEnqueue(ctx context.Context, data cmdroute.Comm
 		Title:        video.Title,
 		SongURL:      video.URL,
 		ThumbnailURL: video.Thumbnail,
-		Duration:     duration(time.Duration(video.Duration) * time.Second),
+		Duration:     duration(video.Duration),
 	}
 
 	h.q.mu.Lock()
@@ -350,7 +350,7 @@ func (h *queueCommandHandler) cmdSwap(ctx context.Context, data cmdroute.Command
 		Title:        video.Title,
 		SongURL:      video.URL,
 		ThumbnailURL: video.Thumbnail,
-		Duration:     duration(time.Duration(video.Duration) * time.Second),
+		Duration:     duration(video.Duration),
 	})
 
 	// TODO: show earliest play time

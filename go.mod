@@ -8,7 +8,7 @@ require (
 	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0
 	github.com/kkdai/youtube/v2 v2.10.1
 	github.com/wader/goutubedl v0.0.0-20241107164926-f902ca5cee5b
-	github.com/xoltia/mpv v0.0.0-20241118033157-a9df52fb0d3e
+	github.com/xoltia/mpv v0.0.0-20241118160153-e5d254646a55
 	golang.org/x/image v0.22.0
 )
 

@@ -32,7 +32,6 @@ func loopPlayMPV(ctx context.Context, q *queue, h *queueCommandHandler, mpvClien
 		log.Fatalln("cannot set OSD duration:", err)
 	}
 
-playLoop:
 	for {
 		q.mu.Lock()
 		song, err := q.dequeue(ctx)
@@ -169,16 +168,20 @@ playLoop:
 			}
 		}
 
-		for {
-			idle, err := mpvClient.GetPropertyBool("idle-active")
-			if err != nil {
-				log.Println("cannot get idle state:", err)
-				continue playLoop
+		continueCh := make(chan struct{})
+		unobserve, err := mpvClient.ObserveProperty("idle-active", func(value any) {
+			if value.(bool) {
+				close(continueCh)
 			}
-			if idle {
-				break
-			}
-			time.Sleep(time.Second)
+		})
+		if err != nil {
+			log.Println("cannot observe idle-active:", err)
+			continue
+		}
+
+		<-continueCh
+		if err = unobserve(); err != nil {
+			log.Println("cannot unobserve idle-active:", err)
 		}
 	}
 }
