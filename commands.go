@@ -444,7 +444,6 @@ func (h *queueCommandHandler) cmdSwap(ctx context.Context, data cmdroute.Command
 		}
 	}
 
-	fmt.Println("song", song)
 	err = tx.Update(song.ID, queue.NewSong{
 		UserID:       song.UserID,
 		Title:        video.Title,
@@ -475,52 +474,71 @@ func (h *queueCommandHandler) cmdSwap(ctx context.Context, data cmdroute.Command
 }
 
 func (h *queueCommandHandler) cmdMove(_ context.Context, data cmdroute.CommandData) *api.InteractionResponseData {
-	return errorResponse(fmt.Errorf("not implemented"))
-	// var options struct {
-	// 	ID       string `discord:"id"`
-	// 	Position int    `discord:"position"`
-	// }
+	var options struct {
+		ID       string `discord:"id"`
+		Position int    `discord:"position"`
+	}
 
-	// if err := data.Options.Unmarshal(&options); err != nil {
-	// 	return errorResponse(err)
-	// }
+	if err := data.Options.Unmarshal(&options); err != nil {
+		return errorResponse(err)
+	}
 
-	// if !h.isAdmin(data.Event.Member) {
-	// 	return &api.InteractionResponseData{
-	// 		Content:         option.NewNullableString("You are not allowed to move songs."),
-	// 		Flags:           discord.EphemeralMessage,
-	// 		AllowedMentions: &api.AllowedMentions{},
-	// 	}
-	// }
+	if !h.isAdmin(data.Event.Member) {
+		return &api.InteractionResponseData{
+			Content:         option.NewNullableString("You are not allowed to move songs."),
+			Flags:           discord.EphemeralMessage,
+			AllowedMentions: &api.AllowedMentions{},
+		}
+	}
 
-	// h.q.mu.Lock()
-	// defer h.q.mu.Unlock()
+	tx := h.q.BeginTxn(true)
+	defer tx.Discard()
 
-	// slug := options.ID
-	// idx := h.q.findIndexBySlug(slug)
-	// if idx == -1 {
-	// 	return &api.InteractionResponseData{
-	// 		Content:         option.NewNullableString("Song not found."),
-	// 		Flags:           discord.EphemeralMessage,
-	// 		AllowedMentions: &api.AllowedMentions{},
-	// 	}
-	// }
+	slug := options.ID
+	song, err := tx.FindBySlug(slug)
+	if err != nil && err != queue.ErrSongNotFound {
+		log.Println("cannot find song by slug:", err)
+		return errorResponse(err)
+	}
 
-	// if options.Position < 1 || options.Position > h.q.len() {
-	// 	return &api.InteractionResponseData{
-	// 		Content:         option.NewNullableString("Invalid position."),
-	// 		Flags:           discord.EphemeralMessage,
-	// 		AllowedMentions: &api.AllowedMentions{},
-	// 	}
-	// }
+	if err == queue.ErrSongNotFound {
+		return &api.InteractionResponseData{
+			Content:         option.NewNullableString("Song not found."),
+			Flags:           discord.EphemeralMessage,
+			AllowedMentions: &api.AllowedMentions{},
+		}
+	}
 
-	// h.q.move(idx, options.Position-1)
+	count, err := tx.Count()
+	if err != nil {
+		log.Println("cannot get queue count:", err)
+		return errorResponse(err)
+	}
 
-	// return &api.InteractionResponseData{
-	// 	Content:         option.NewNullableString("Song moved."),
-	// 	Flags:           discord.EphemeralMessage,
-	// 	AllowedMentions: &api.AllowedMentions{},
-	// }
+	if options.Position < 1 || options.Position > count {
+		return &api.InteractionResponseData{
+			Content:         option.NewNullableString("Invalid position."),
+			Flags:           discord.EphemeralMessage,
+			AllowedMentions: &api.AllowedMentions{},
+		}
+	}
+
+	err = tx.Move(song.ID, options.Position-1)
+	if err != nil {
+		log.Println("cannot move song:", err)
+		return errorResponse(err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		log.Println("cannot commit transaction:", err)
+		return errorResponse(err)
+	}
+
+	return &api.InteractionResponseData{
+		Content:         option.NewNullableString("Song moved."),
+		Flags:           discord.EphemeralMessage,
+		AllowedMentions: &api.AllowedMentions{},
+	}
 }
 
 func (h *queueCommandHandler) isAdmin(member *discord.Member) bool {

@@ -21,7 +21,12 @@ type Queue struct {
 }
 
 func OpenQueue(path string) (*Queue, error) {
-	opts := badger.DefaultOptions(path)
+	var opts badger.Options
+	if path == ":memory:" {
+		opts = badger.DefaultOptions("").WithInMemory(true)
+	} else {
+		opts = badger.DefaultOptions(path)
+	}
 	opts.Logger = nil
 	db, err := badger.Open(opts)
 	if err != nil {

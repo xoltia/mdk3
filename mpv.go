@@ -39,7 +39,6 @@ func loopPlayMPV(ctx context.Context, q *queue.Queue, h *queueCommandHandler, mp
 		if err != nil {
 			if err == queue.ErrQueueEmpty {
 				tx.Discard()
-				log.Println("queue is empty")
 				select {
 				case <-ctx.Done():
 					return

@@ -13,8 +13,9 @@ import (
 const headNilID = -1
 
 var (
-	ErrSongNotFound = errors.New("song not found")
-	ErrQueueEmpty   = errors.New("queue is empty")
+	ErrSongNotFound    = errors.New("song not found")
+	ErrQueueEmpty      = errors.New("queue is empty")
+	ErrMoveOutOfBounds = errors.New("move out of bounds")
 )
 
 type QueueTx struct {
@@ -87,15 +88,7 @@ func (qtx *QueueTx) Update(id int, song NewSong) error {
 	}
 
 	oldSong.NewSong = song
-	buff := new(bytes.Buffer)
-	err = gob.NewEncoder(buff).Encode(oldSong)
-	if err != nil {
-		return fmt.Errorf("cannot encode queued song: %w", err)
-	}
-
-	key := [9]byte{byte(recordTypeQueuedSong)}
-	binary.BigEndian.PutUint64(key[1:], uint64(id))
-	return qtx.txn.Set(key[:], buff.Bytes())
+	return qtx.set(id, oldSong)
 }
 
 // Count counts all songs.
@@ -217,6 +210,11 @@ func (qtx *QueueTx) Empty() (bool, error) {
 	return head == headNilID, nil
 }
 
+// Move changes the position of a song by ID.
+func (qtx *QueueTx) Move(id, position int) error {
+	return qtx.moveWithoutBoundCheck(id, position)
+}
+
 // putSong writes a new song to the database.
 func (qtx *QueueTx) putSong(song NewSong) (id int, err error) {
 	seqID, err := qtx.queue.id.Next()
@@ -232,17 +230,7 @@ func (qtx *QueueTx) putSong(song NewSong) (id int, err error) {
 		Slug:    fmt.Sprintf("song-%d", id), // TODO: generate slug
 	}
 
-	buff := new(bytes.Buffer)
-	err = gob.NewEncoder(buff).Encode(queuedSong)
-	if err != nil {
-		err = fmt.Errorf("cannot encode queued song: %w", err)
-		return
-	}
-
-	key := [9]byte{byte(recordTypeQueuedSong)}
-	binary.BigEndian.PutUint64(key[1:], seqID)
-	err = qtx.txn.Set(key[:], buff.Bytes())
-	return
+	return id, qtx.set(id, queuedSong)
 }
 
 // headID reads the head of the queue from the database.
@@ -324,22 +312,174 @@ func (qtx *QueueTx) updateHead(head int) error {
 }
 
 func (qtx *QueueTx) songIterator() *songIterator {
-	iterator := qtx.txn.NewIterator(badger.IteratorOptions{
-		Prefix: []byte{byte(recordTypeQueuedSong)},
-	})
-	iterator.Seek([]byte{byte(recordTypeQueuedSong)})
+	return qtx.songIteratorWithOptions(25, false)
+}
+
+func (qtx *QueueTx) songIteratorReverse() *songIterator {
+	iter := qtx.songIteratorWithOptions(25, true)
+	iter.Rewind()
+	return iter
+}
+
+func (qtx *QueueTx) songIteratorWithOptions(prefetch int, reverse bool) *songIterator {
+	opts := badger.DefaultIteratorOptions
+	opts.Prefix = []byte{byte(recordTypeQueuedSong)}
+	opts.PrefetchValues = prefetch > 0
+	opts.Reverse = reverse
+	iterator := qtx.txn.NewIterator(opts)
+	iterator.Seek(opts.Prefix)
 	return &songIterator{iterator}
 }
 
-// TODO: Implement method for moving songs to a new position.
+// Method for moving songs to a new position.
 // Will work by making a "hole" in the desired position, and shifting
 // all songs on the side of the original position away from the hole
 // towards the previous position. The song will then be inserted into the hole.
 // Example, moving song 5 to position 3:
-//  [ 1 2 3 4 5 6 7 8 9 ] // store 5 in a temporary variable
-//  [ 1 2 x 3 4 6 7 8 9 ] // move 3, 4 up
-//  [ 1 2 5 3 4 6 7 8 9 ] // insert 5
+//
+//	[ 1 2 3 4 5 6 7 8 9 ] // store 5 in a temporary variable
+//	[ 1 2 x 3 4 6 7 8 9 ] // move 3, 4 up
+//	[ 1 2 5 3 4 6 7 8 9 ] // insert 5
+//
 // Works in reverse as well, moving song 3 to position 5:
-//  [ 1 2 3 4 5 6 7 8 9 ] // store 3 in a temporary variable
-//  [ 1 2 4 5 x 6 7 8 9 ] // move 4, 5 down
-//  [ 1 2 4 3 5 6 7 8 9 ] // insert 3
+//
+//	[ 1 2 3 4 5 6 7 8 9 ] // store 3 in a temporary variable
+//	[ 1 2 4 5 x 6 7 8 9 ] // move 4, 5 down
+//	[ 1 2 4 3 5 6 7 8 9 ] // insert 3
+
+func (qtx *QueueTx) idRelativeToHead(distance int) (sid int, err error) {
+	head, err := qtx.headID()
+	if err != nil {
+		return
+	}
+
+	if head == headNilID {
+		err = ErrQueueEmpty
+		return
+	}
+
+	var iter *songIterator
+	if distance < 0 {
+		iter = qtx.songIteratorReverse()
+		distance = -distance
+	} else {
+		iter = qtx.songIterator()
+	}
+	defer iter.Close()
+
+	iter.seekID(head)
+	for i := 0; i < distance; i++ {
+		iter.Next()
+		if !iter.Valid() {
+			err = ErrMoveOutOfBounds
+			return
+		}
+	}
+
+	sid = iter.id()
+	return
+}
+
+func (qtx *QueueTx) distanceFromHeadByID(id int) (distance int, err error) {
+	head, err := qtx.headID()
+	if err != nil {
+		return
+	}
+
+	if head == headNilID {
+		err = ErrQueueEmpty
+		return
+	}
+
+	it := qtx.songIterator()
+	it.seekID(head)
+	defer it.Close()
+
+	for it.Valid() {
+		if it.id() == id {
+			return distance, nil
+		}
+		distance++
+		it.Next()
+	}
+
+	err = ErrSongNotFound
+	return
+}
+
+func (qtx *QueueTx) moveWithoutBoundCheck(id, position int) error {
+	// TODO: what the sigma is this?
+	// This function barely makes sense to me and probably needs a rewrite.
+
+	songIDAtPosition, err := qtx.idRelativeToHead(position)
+	if err != nil {
+		return err
+	}
+
+	if songIDAtPosition == id {
+		return nil
+	}
+
+	currentPosition, err := qtx.distanceFromHeadByID(id)
+	if err != nil {
+		return err
+	}
+
+	currentSong, err := qtx.FindByID(id)
+	if err != nil {
+		return err
+	}
+
+	var it *songIterator
+	if currentPosition < position {
+		it = qtx.songIteratorReverse()
+	} else {
+		it = qtx.songIterator()
+	}
+
+	defer it.Close()
+
+	it.seekID(songIDAtPosition)
+	lastSong, err := it.song()
+	if err != nil {
+		return err
+	}
+	it.Next()
+
+	for it.Valid() {
+		nextSong, err := it.song()
+		if err != nil {
+			return err
+		}
+
+		lastSongWithSameID := lastSong
+		lastSongWithSameID.ID = nextSong.ID
+
+		err = qtx.set(nextSong.ID, lastSongWithSameID)
+		if err != nil {
+			return err
+		}
+
+		lastSong = nextSong
+		if nextSong.ID == id {
+			break
+		}
+		it.Next()
+	}
+
+	currentSong.ID = songIDAtPosition
+	err = qtx.set(songIDAtPosition, currentSong)
+	return err
+}
+
+func (qtx *QueueTx) set(id int, song QueuedSong) error {
+	buff := new(bytes.Buffer)
+	err := gob.NewEncoder(buff).Encode(song)
+	if err != nil {
+		return fmt.Errorf("cannot encode queued song: %w", err)
+	}
+
+	key := [9]byte{byte(recordTypeQueuedSong)}
+	binary.BigEndian.PutUint64(key[1:], uint64(id))
+	return qtx.txn.Set(key[:], buff.Bytes())
+}
