@@ -4,17 +4,6 @@ import (
 	badger "github.com/dgraph-io/badger/v4"
 )
 
-type recordType uint8
-
-const (
-	// recordTypeQueuedSong is a record type for QueuedSong.
-	recordTypeQueuedSong recordType = iota
-	// recordTypeHead is a record type for storing the ID of the head of the queue.
-	recordTypeHead
-	// recordTypeSequence is a record type for storing the sequence number.
-	recordTypeSequence
-)
-
 type Queue struct {
 	db *badger.DB
 	id *badger.Sequence

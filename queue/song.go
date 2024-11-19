@@ -12,7 +12,8 @@ type NewSong struct {
 
 type QueuedSong struct {
 	NewSong
-	ID       int
-	Slug     string
-	QueuedAt time.Time
+	ID         int
+	Slug       string
+	QueuedAt   time.Time
+	DequeuedAt time.Time
 }

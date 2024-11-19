@@ -6,8 +6,23 @@ import (
 	"encoding/gob"
 	"errors"
 	"fmt"
+	"strconv"
+	"time"
 
 	badger "github.com/dgraph-io/badger/v4"
+)
+
+type recordType uint8
+
+const (
+	// recordTypeQueuedSong is a record type for QueuedSong.
+	recordTypeQueuedSong recordType = iota
+	// recordTypeHead is a record type for storing the ID of the head of the queue.
+	recordTypeHead
+	// recordTypeSequence is a record type for storing the sequence number.
+	recordTypeSequence
+	// recordTypeSlugIndex is a record type for storing the slug index.
+	recordTypeSlugIndex
 )
 
 const headNilID = -1
@@ -16,6 +31,7 @@ var (
 	ErrSongNotFound    = errors.New("song not found")
 	ErrQueueEmpty      = errors.New("queue is empty")
 	ErrMoveOutOfBounds = errors.New("move out of bounds")
+	ErrSongDequeued    = errors.New("song has already been dequeued")
 )
 
 type QueueTx struct {
@@ -52,6 +68,17 @@ func (qtx *QueueTx) Dequeue() (headSong QueuedSong, err error) {
 	}
 
 	err = qtx.updateHead(headSong.ID)
+	if err != nil {
+		return
+	}
+
+	err = qtx.clearSlugIndex(headSong.Slug)
+	if err != nil {
+		return
+	}
+
+	headSong.DequeuedAt = time.Now()
+	err = qtx.set(headSong.ID, headSong)
 	return
 }
 
@@ -62,6 +89,18 @@ func (qtx *QueueTx) Peek() (headSong QueuedSong, err error) {
 
 // Remove deletes a song by ID.
 func (qtx *QueueTx) Remove(id int) (err error) {
+	song, err := qtx.FindByID(id)
+	if err != nil {
+		return
+	}
+
+	if song.DequeuedAt.IsZero() {
+		err = qtx.clearSlugIndex(song.Slug)
+		if err != nil {
+			return
+		}
+	}
+
 	key := [9]byte{byte(recordTypeQueuedSong)}
 	binary.BigEndian.PutUint64(key[1:], uint64(id))
 	if err = qtx.txn.Delete(key[:]); err != nil {
@@ -137,22 +176,23 @@ func (qtx *QueueTx) IterateFromHead(f func(song QueuedSong) bool) error {
 
 // FindBySlug returns a song by slug.
 func (qtx *QueueTx) FindBySlug(slug string) (song QueuedSong, err error) {
-	// TODO: Implement index for slug
-	iter := qtx.songIterator()
-	defer iter.Close()
+	slugIndexKey := make([]byte, 1+len(slug))
+	slugIndexKey[0] = byte(recordTypeSlugIndex)
+	copy(slugIndexKey[1:], []byte(slug))
 
-	for iter.Valid() {
-		song, err = iter.song()
-		if err != nil {
-			return
+	item, err := qtx.txn.Get(slugIndexKey)
+	if err != nil {
+		if errors.Is(err, badger.ErrKeyNotFound) {
+			err = ErrSongNotFound
 		}
-		if song.Slug == slug {
-			return
-		}
-		iter.Next()
+		return
 	}
 
-	err = ErrSongNotFound
+	err = item.Value(func(val []byte) error {
+		id := int(binary.BigEndian.Uint64(val))
+		song, err = qtx.FindByID(id)
+		return err
+	})
 	return
 }
 
@@ -219,27 +259,118 @@ func (qtx *QueueTx) Empty() (bool, error) {
 	return head == headNilID, nil
 }
 
-// Move changes the position of a song by ID.
-func (qtx *QueueTx) Move(id, position int) error {
-	return qtx.moveWithoutBoundCheck(id, position)
+// Move changes the position of a song by ID. Only songs that
+// have not yet been dequeued can be moved. Songs cannot be moved
+// below the head of the queue.
+func (qtx *QueueTx) Move(id, newPosition int) error {
+	currentPosition, err := qtx.distanceFromHeadByID(id)
+	if err != nil {
+		return err
+	}
+	if currentPosition == newPosition {
+		return nil
+	}
+	if currentPosition < 0 {
+		return ErrSongDequeued
+	}
+	if newPosition < 0 {
+		return ErrMoveOutOfBounds
+	}
+
+	return qtx.moveWithoutBoundCheck(id, currentPosition, newPosition)
 }
 
 // putSong writes a new song to the database.
 func (qtx *QueueTx) putSong(song NewSong) (id int, err error) {
+	slugCandidate := randomSlug()
+
 	seqID, err := qtx.queue.id.Next()
 	if err != nil {
 		return
 	}
 
 	id = int(seqID)
+	slug, err := qtx.indexSlugFindNonDuplicate(slugCandidate, id)
+	if err != nil {
+		return
+	}
 
 	queuedSong := QueuedSong{
 		NewSong: song,
 		ID:      id,
-		Slug:    fmt.Sprintf("song-%d", id), // TODO: generate slug
+		Slug:    slug,
 	}
 
 	return id, qtx.set(id, queuedSong)
+}
+
+func (qtx *QueueTx) clearSlugIndex(slugWithDedupeNumber string) error {
+	slugIndexKey := make([]byte, 1+len(slugWithDedupeNumber))
+	slugIndexKey[0] = byte(recordTypeSlugIndex)
+	copy(slugIndexKey[1:], []byte(slugWithDedupeNumber))
+
+	return qtx.txn.Delete(slugIndexKey)
+}
+
+func (qtx *QueueTx) setSlugID(slug string, id int) error {
+	slugIndexKey := make([]byte, 1+len(slug))
+	slugIndexKey[0] = byte(recordTypeSlugIndex)
+	copy(slugIndexKey[1:], []byte(slug))
+
+	idValue := [8]byte{}
+	binary.BigEndian.PutUint64(idValue[:], uint64(id))
+
+	return qtx.txn.Set(slugIndexKey, idValue[:])
+}
+
+func (qtx *QueueTx) indexSlugFindNonDuplicate(slug string, id int) (string, error) {
+	slugKey := make([]byte, 1+len(slug))
+	slugKey[0] = byte(recordTypeSlugIndex)
+	copy(slugKey[1:], []byte(slug))
+
+	slugIterator := qtx.txn.NewIterator(badger.IteratorOptions{
+		Prefix: slugKey,
+	})
+	defer slugIterator.Close()
+	slugIterator.Seek(slugKey)
+
+	maxSlugDedupe := 0
+	numberDuplicates := 0
+
+	for slugIterator.Valid() {
+		numberDuplicates++
+		k := slugIterator.Item().Key()
+		dedupeNumberSplit := bytes.IndexByte(k, '-')
+		if dedupeNumberSplit == -1 {
+			slugIterator.Next()
+			continue
+		}
+		dedupeNumberAscii := k[dedupeNumberSplit+1:]
+		dedupeNumber, err := strconv.Atoi(string(dedupeNumberAscii))
+		if err != nil {
+			return "", err
+		}
+
+		if dedupeNumber > maxSlugDedupe {
+			maxSlugDedupe = dedupeNumber
+		}
+
+		slugIterator.Next()
+	}
+
+	var deduplicatedSlug string
+	if numberDuplicates == 0 {
+		deduplicatedSlug = slug
+	} else {
+		deduplicatedSlug = fmt.Sprintf("%s-%d", slug, maxSlugDedupe+1)
+	}
+
+	slugIndexKey := make([]byte, 1+len(deduplicatedSlug))
+	slugIndexKey[0] = byte(recordTypeSlugIndex)
+	copy(slugIndexKey[1:], []byte(deduplicatedSlug))
+
+	err := qtx.setSlugID(deduplicatedSlug, id)
+	return deduplicatedSlug, err
 }
 
 // headID reads the head of the queue from the database.
@@ -396,7 +527,7 @@ func (qtx *QueueTx) distanceFromHeadByID(id int) (distance int, err error) {
 	}
 
 	if head == headNilID {
-		err = ErrQueueEmpty
+		err = ErrSongNotFound
 		return
 	}
 
@@ -416,7 +547,7 @@ func (qtx *QueueTx) distanceFromHeadByID(id int) (distance int, err error) {
 	return
 }
 
-func (qtx *QueueTx) moveWithoutBoundCheck(id, position int) error {
+func (qtx *QueueTx) moveWithoutBoundCheck(id, currentPosition, position int) error {
 	// TODO: what the sigma is this?
 	// This function barely makes sense to me and probably needs a rewrite.
 
@@ -427,11 +558,6 @@ func (qtx *QueueTx) moveWithoutBoundCheck(id, position int) error {
 
 	if songIDAtPosition == id {
 		return nil
-	}
-
-	currentPosition, err := qtx.distanceFromHeadByID(id)
-	if err != nil {
-		return err
 	}
 
 	currentSong, err := qtx.FindByID(id)
@@ -469,6 +595,11 @@ func (qtx *QueueTx) moveWithoutBoundCheck(id, position int) error {
 			return err
 		}
 
+		err = qtx.setSlugID(lastSongWithSameID.Slug, nextSong.ID)
+		if err != nil {
+			return err
+		}
+
 		lastSong = nextSong
 		if nextSong.ID == id {
 			break
@@ -478,6 +609,11 @@ func (qtx *QueueTx) moveWithoutBoundCheck(id, position int) error {
 
 	currentSong.ID = songIDAtPosition
 	err = qtx.set(songIDAtPosition, currentSong)
+	if err != nil {
+		return err
+	}
+
+	err = qtx.setSlugID(currentSong.Slug, songIDAtPosition)
 	return err
 }
 
