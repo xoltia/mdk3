@@ -22,7 +22,7 @@ func init() {
 
 	s := rand.NewSource(time.Now().UnixNano())
 	r := rand.New(s)
-	zipf = rand.NewZipf(r, 1.1, 36.5, uint64(len(slugs)))
+	zipf = rand.NewZipf(r, 1.1, 36.5, uint64(len(slugs)-1))
 }
 
 func randomSlug() string {
