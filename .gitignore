@@ -3,5 +3,5 @@ mdk3
 *.png
 *.sh
 *.bat
-queue_data
+queuedata
 dist

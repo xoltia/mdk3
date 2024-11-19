@@ -21,7 +21,7 @@ import (
 )
 
 var (
-	queuePath    = flag.String("queue-path", "queue_data", "path to the queue archive")
+	queuePath    = flag.String("queue-path", "queuedata", "path to store queue data")
 	playbackTime = flag.Duration("playback-time", 30*time.Second, "time to wait before playing the next song")
 	discordToken = flag.String("discord-token", "", "Discord bot token")
 	ytdlpPath    = flag.String("ytdlp-path", "", "path to yt-dlp binary")
@@ -57,12 +57,6 @@ func main() {
 	}()
 
 	log.Println("connected to mpv")
-
-	if *queuePath != "" {
-		if err := os.MkdirAll(*queuePath, 0755); err != nil {
-			panic(err)
-		}
-	}
 
 	q, err := queue.OpenQueue(*queuePath)
 	if err != nil {
