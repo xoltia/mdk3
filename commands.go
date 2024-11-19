@@ -229,7 +229,7 @@ func (h *queueCommandHandler) cmdEnqueue(ctx context.Context, data cmdroute.Comm
 	// 	queueDuration -= time.Since(h.q.lastDequeueTime)
 	// }
 
-	err = tx.Iterate(func(song queue.QueuedSong) bool {
+	err = tx.IterateFromHead(func(song queue.QueuedSong) bool {
 		queueDuration += song.Duration
 		return true
 	})

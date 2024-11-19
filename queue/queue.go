@@ -65,5 +65,5 @@ func (q *Queue) Iterate(f func(QueuedSong) bool) error {
 	tx := q.BeginTxn(false)
 	defer tx.Discard()
 
-	return tx.Iterate(f)
+	return tx.IterateFromHead(f)
 }

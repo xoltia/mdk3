@@ -95,22 +95,31 @@ func (qtx *QueueTx) Update(id int, song NewSong) error {
 func (qtx *QueueTx) Count() (int, error) {
 	head, err := qtx.headID()
 	if err != nil {
-		if errors.Is(err, ErrQueueEmpty) {
-			return 0, nil
-		}
 		return 0, err
 	}
 
+	if head == headNilID {
+		return 0, nil
+	}
+
 	iter := qtx.songIterator()
-	iter.seekID(head)
 	defer iter.Close()
+	iter.seekID(head)
 	return iter.count(), nil
 }
 
-// Iterate iterates over all songs in the queue.
-func (qtx *QueueTx) Iterate(f func(song QueuedSong) bool) error {
+// IterateFromHead iterates over all songs in the queue from the head.
+func (qtx *QueueTx) IterateFromHead(f func(song QueuedSong) bool) error {
 	iter := qtx.songIterator()
 	defer iter.Close()
+	head, err := qtx.headID()
+	if err != nil {
+		return err
+	}
+	if head == headNilID {
+		return nil
+	}
+	iter.seekID(head)
 
 	for iter.Valid() {
 		song, err := iter.song()
@@ -169,10 +178,10 @@ func (qtx *QueueTx) FindByID(id int) (song QueuedSong, err error) {
 func (qtx *QueueTx) List(offset, limit int) ([]QueuedSong, error) {
 	head, err := qtx.headID()
 	if err != nil {
-		if errors.Is(err, ErrQueueEmpty) {
-			return nil, nil
-		}
 		return nil, err
+	}
+	if head == headNilID {
+		return nil, nil
 	}
 
 	it := qtx.songIterator()
