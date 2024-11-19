@@ -101,12 +101,6 @@ func (qtx *QueueTx) Remove(id int) (err error) {
 		}
 	}
 
-	key := [9]byte{byte(recordTypeQueuedSong)}
-	binary.BigEndian.PutUint64(key[1:], uint64(id))
-	if err = qtx.txn.Delete(key[:]); err != nil {
-		return
-	}
-
 	head, err := qtx.headID()
 	if err != nil {
 		return
@@ -114,6 +108,15 @@ func (qtx *QueueTx) Remove(id int) (err error) {
 
 	if head == id {
 		err = qtx.updateHead(id)
+		if err != nil {
+			return
+		}
+	}
+
+	key := [9]byte{byte(recordTypeQueuedSong)}
+	binary.BigEndian.PutUint64(key[1:], uint64(id))
+	if err = qtx.txn.Delete(key[:]); err != nil {
+		return
 	}
 
 	return
