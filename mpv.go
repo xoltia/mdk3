@@ -5,11 +5,16 @@ import (
 	"fmt"
 	"image"
 	"log"
+	"sync/atomic"
 	"time"
 
 	"github.com/diamondburned/arikawa/v3/discord"
 	"github.com/xoltia/mdk3/queue"
 	"github.com/xoltia/mpv"
+)
+
+var (
+	dequeueEnabled = atomic.Bool{}
 )
 
 func showOSD(mpvClient *mpv.Client, text string) error {
@@ -34,6 +39,16 @@ func loopPlayMPV(ctx context.Context, q *queue.Queue, h *queueCommandHandler, mp
 	}
 
 	for {
+		if !dequeueEnabled.Load() {
+			showOSD(mpvClient, "Waiting for /start")
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(1 * time.Second):
+				continue
+			}
+		}
+
 		tx := q.BeginTxn(true)
 		song, err := tx.Dequeue()
 		if err != nil {

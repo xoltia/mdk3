@@ -78,6 +78,14 @@ var commands = []api.CreateCommandData{
 			},
 		},
 	},
+	{
+		Name:        "start",
+		Description: "Start playing the queue.",
+	},
+	{
+		Name:        "stop",
+		Description: "Stop playing the queue. Will not stop the current song.",
+	},
 }
 
 type queueCommandHandler struct {
@@ -144,6 +152,8 @@ func newHandler(s *state.State, q *queue.Queue, options ...queueCommandHandlerOp
 	h.AddFunc("remove", h.cmdRemove)
 	h.AddFunc("swap", h.cmdSwap)
 	h.AddFunc("move", h.cmdMove)
+	h.AddFunc("start", h.cmdStart)
+	h.AddFunc("stop", h.cmdStop)
 
 	return h
 }
@@ -155,6 +165,46 @@ func (h *queueCommandHandler) decrementUserCount(userID string) {
 	defer h.userCountsMu.Unlock()
 	if count := h.userCounts[userID]; count > 0 {
 		h.userCounts[userID]--
+	}
+}
+
+func (h *queueCommandHandler) cmdStart(_ context.Context, data cmdroute.CommandData) *api.InteractionResponseData {
+	if !h.isAdmin(data.Event.Member) {
+		return &api.InteractionResponseData{
+			Content:         option.NewNullableString("You are not allowed to start the queue."),
+			Flags:           discord.EphemeralMessage,
+			AllowedMentions: &api.AllowedMentions{},
+		}
+	}
+
+	message := "Queue playback started."
+	if dequeueEnabled.Swap(true) {
+		message = "Queue playback already started."
+	}
+	return &api.InteractionResponseData{
+		Content:         option.NewNullableString(message),
+		Flags:           discord.EphemeralMessage,
+		AllowedMentions: &api.AllowedMentions{},
+	}
+}
+
+func (h *queueCommandHandler) cmdStop(_ context.Context, data cmdroute.CommandData) *api.InteractionResponseData {
+	if !h.isAdmin(data.Event.Member) {
+		return &api.InteractionResponseData{
+			Content:         option.NewNullableString("You are not allowed to stop the queue."),
+			Flags:           discord.EphemeralMessage,
+			AllowedMentions: &api.AllowedMentions{},
+		}
+	}
+
+	message := "Queue playback stopped."
+	if !dequeueEnabled.Swap(false) {
+		message = "Queue playback already stopped."
+	}
+	return &api.InteractionResponseData{
+		Content:         option.NewNullableString(message),
+		Flags:           discord.EphemeralMessage,
+		AllowedMentions: &api.AllowedMentions{},
 	}
 }
 
