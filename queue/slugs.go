@@ -1,10 +1,10 @@
 package queue
 
 import (
+	crand "crypto/rand"
 	_ "embed"
 	"encoding/json"
-	"math/rand"
-	"time"
+	"math/rand/v2"
 )
 
 //go:embed slugs.json
@@ -20,7 +20,12 @@ func init() {
 		panic(err)
 	}
 
-	s := rand.NewSource(time.Now().UnixNano())
+	var seed [32]byte
+	_, err := crand.Read(seed[:])
+	if err != nil {
+		panic(err)
+	}
+	s := rand.NewChaCha8(seed)
 	r := rand.New(s)
 	zipf = rand.NewZipf(r, 1.1, 36.5, uint64(len(slugs)-1))
 }
