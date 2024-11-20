@@ -11,7 +11,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/diamondburned/arikawa/v3/api"
 	"github.com/diamondburned/arikawa/v3/discord"
 	"github.com/diamondburned/arikawa/v3/gateway"
 	"github.com/diamondburned/arikawa/v3/state"
@@ -96,8 +95,6 @@ func main() {
 	if err != nil {
 		log.Fatalln("cannot get application:", err)
 	}
-
-	s.BulkOverwriteCommands(application.ID, []api.CreateCommandData{})
 
 	if _, err := s.BulkOverwriteGuildCommands(application.ID, discord.GuildID(guildSnowflake), commands); err != nil {
 		log.Fatalln("cannot update commands:", err)
