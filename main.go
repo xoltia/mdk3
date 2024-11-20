@@ -64,6 +64,13 @@ func main() {
 	}
 	defer q.Close()
 
+	go func() {
+		err = q.GC()
+		if err != nil {
+			log.Println("cannot gc queue:", err)
+		}
+	}()
+
 	if *discordToken == "" {
 		log.Fatalln("no discord token provided")
 	}

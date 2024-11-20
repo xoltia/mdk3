@@ -75,6 +75,17 @@ func (q *Queue) Iterate(f func(QueuedSong) bool) error {
 	return tx.IterateFromHead(f)
 }
 
+func (q *Queue) GC() (err error) {
+	err = q.db.RunValueLogGC(0.3)
+	for err == nil {
+		err = q.db.RunValueLogGC(0.3)
+	}
+	if err == badger.ErrNoRewrite {
+		err = nil
+	}
+	return
+}
+
 func checkVersion(db *badger.DB) (v uint32, err error) {
 	err = db.View(func(txn *badger.Txn) error {
 		item, err := txn.Get([]byte{byte(recordTypeVersion)})
