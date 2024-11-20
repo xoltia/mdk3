@@ -7,6 +7,230 @@ import (
 	"github.com/xoltia/mdk3/queue"
 )
 
+func init() {
+	var seed [32]byte
+	for i := range seed {
+		seed[i] = 0
+	}
+	queue.SeedSlugGenerator(seed)
+}
+
+func TestQueueEnqueueManySongs(t *testing.T) {
+	q, err := queue.OpenQueue(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer q.Close()
+
+	tx := q.BeginTxn(true)
+	defer tx.Discard()
+
+	count, err := tx.Count()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if count != 0 {
+		t.Errorf("expected 0, got %d", count)
+	}
+
+	empty, err := tx.Empty()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !empty {
+		t.Error("expected empty queue")
+	}
+
+	slugs := make(map[string]struct{})
+	for _, song := range tests {
+		sid, err := tx.Enqueue(song)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		song, err := tx.FindByID(sid)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if _, ok := slugs[song.Slug]; ok {
+			t.Errorf("slug %s is duplicated", song.Slug)
+		}
+		slugs[song.Slug] = struct{}{}
+	}
+
+	count, err = tx.Count()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if count != len(tests) {
+		t.Errorf("expected %d, got %d", len(tests), count)
+	}
+}
+
+func TestQueueDequeue(t *testing.T) {
+	q, err := queue.OpenQueue(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer q.Close()
+
+	tx := q.BeginTxn(true)
+	defer tx.Discard()
+
+	for _, song := range tests {
+		_, err := tx.Enqueue(song)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	for i := 0; i < len(tests); i++ {
+		song, err := tx.Dequeue()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if song.ID != i {
+			t.Errorf("expected %d, got %d", i, song.ID)
+		}
+	}
+
+	empty, err := tx.Empty()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !empty {
+		t.Error("expected empty queue")
+	}
+
+	_, err = tx.Dequeue()
+	if err != queue.ErrQueueEmpty {
+		t.Errorf("expected %v, got %v", queue.ErrQueueEmpty, err)
+	}
+
+}
+
+func TestQueueRemove(t *testing.T) {
+	q, err := queue.OpenQueue(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer q.Close()
+
+	tx := q.BeginTxn(true)
+	defer tx.Discard()
+
+	for _, song := range tests {
+		_, err := tx.Enqueue(song)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Always first because of the seed
+	// Change this if the seed changes
+	song, err := tx.FindBySlug("suha")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if song.ID != 0 {
+		t.Errorf("expected 0, got %d", song.ID)
+	}
+
+	err = tx.Remove(song.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	song, err = tx.Dequeue()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if song.ID != 1 {
+		t.Errorf("expected 1, got %d", song.ID)
+	}
+}
+
+func TestMoveForwardPosition(t *testing.T) {
+	testMove(t, 5, 0, 10)
+}
+
+func TestMoveBackwardPosition(t *testing.T) {
+	testMove(t, 5, 9, 10)
+}
+
+func TestMoveSamePosition(t *testing.T) {
+	testMove(t, 5, 5, 10)
+}
+
+func testMove(t *testing.T, id, to, max int) {
+	if max > len(tests) {
+		panic("max is greater than the number of tests")
+	}
+
+	q, err := queue.OpenQueue(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer q.Close()
+
+	tx := q.BeginTxn(true)
+	defer tx.Discard()
+
+	slugs := []string{}
+	for _, song := range tests[:max] {
+		id, err := tx.Enqueue(song)
+		if err != nil {
+			t.Fatal(err)
+		}
+		s, err := tx.FindByID(id)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		slugs = append(slugs, s.Slug)
+	}
+
+	err = tx.Move(id, to)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	expectedOrder := []string{}
+
+	// Note: only works because ID = position without any previous remove operations
+	if to < id {
+		expectedOrder = append(expectedOrder, slugs[:to]...)
+		expectedOrder = append(expectedOrder, slugs[id])
+		expectedOrder = append(expectedOrder, slugs[to:id]...)
+		expectedOrder = append(expectedOrder, slugs[id+1:]...)
+	} else {
+		expectedOrder = append(expectedOrder, slugs[:id]...)
+		expectedOrder = append(expectedOrder, slugs[id+1:to+1]...)
+		expectedOrder = append(expectedOrder, slugs[id])
+		expectedOrder = append(expectedOrder, slugs[to+1:]...)
+	}
+
+	t.Log(slugs)
+	t.Log(expectedOrder)
+
+	songs, err := tx.List(0, max)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for i, song := range songs {
+		if song.Slug != expectedOrder[i] {
+			t.Errorf("expected %s, got %s", expectedOrder[i], song.Slug)
+		}
+	}
+}
+
 var tests = []queue.NewSong{
 	{
 		Title:        "【VTuber】パイパイ仮面でどうかしらん？【宝鐘マリン/ホロライブ3期生】【インスト版(ガイドメロディ付)/カラオケ字幕】",
@@ -708,228 +932,4 @@ var tests = []queue.NewSong{
 		ThumbnailURL: "https://i.ytimg.com/vi/gkKNMit1gwk/hqdefault.jpg?sqp=-oaymwEbCKgBEF5IVfKriqkDDggBFQAAiEIYAXABwAEG&rs=AOn4CLCjAj3JTxKe49pE_cg0F2KR2G9npg",
 		UserID:       "173979233725448192",
 	},
-}
-
-func init() {
-	var seed [32]byte
-	for i := range seed {
-		seed[i] = 0
-	}
-	queue.SeedSlugGenerator(seed)
-}
-
-func TestQueueEnqueueManySongs(t *testing.T) {
-	q, err := queue.OpenQueue(":memory:")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer q.Close()
-
-	tx := q.BeginTxn(true)
-	defer tx.Discard()
-
-	count, err := tx.Count()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if count != 0 {
-		t.Errorf("expected 0, got %d", count)
-	}
-
-	empty, err := tx.Empty()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if !empty {
-		t.Error("expected empty queue")
-	}
-
-	slugs := make(map[string]struct{})
-	for _, song := range tests {
-		sid, err := tx.Enqueue(song)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		song, err := tx.FindByID(sid)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		if _, ok := slugs[song.Slug]; ok {
-			t.Errorf("slug %s is duplicated", song.Slug)
-		}
-		slugs[song.Slug] = struct{}{}
-	}
-
-	count, err = tx.Count()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if count != len(tests) {
-		t.Errorf("expected %d, got %d", len(tests), count)
-	}
-}
-
-func TestQueueDequeue(t *testing.T) {
-	q, err := queue.OpenQueue(":memory:")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer q.Close()
-
-	tx := q.BeginTxn(true)
-	defer tx.Discard()
-
-	for _, song := range tests {
-		_, err := tx.Enqueue(song)
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	for i := 0; i < len(tests); i++ {
-		song, err := tx.Dequeue()
-		if err != nil {
-			t.Fatal(err)
-		}
-		if song.ID != i {
-			t.Errorf("expected %d, got %d", i, song.ID)
-		}
-	}
-
-	empty, err := tx.Empty()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !empty {
-		t.Error("expected empty queue")
-	}
-
-	_, err = tx.Dequeue()
-	if err != queue.ErrQueueEmpty {
-		t.Errorf("expected %v, got %v", queue.ErrQueueEmpty, err)
-	}
-
-}
-
-func TestQueueRemove(t *testing.T) {
-	q, err := queue.OpenQueue(":memory:")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer q.Close()
-
-	tx := q.BeginTxn(true)
-	defer tx.Discard()
-
-	for _, song := range tests {
-		_, err := tx.Enqueue(song)
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	// Always first because of the seed
-	// Change this if the seed changes
-	song, err := tx.FindBySlug("suha")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if song.ID != 0 {
-		t.Errorf("expected 0, got %d", song.ID)
-	}
-
-	err = tx.Remove(song.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	song, err = tx.Dequeue()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if song.ID != 1 {
-		t.Errorf("expected 1, got %d", song.ID)
-	}
-}
-
-func TestMoveForwardPosition(t *testing.T) {
-	testMove(t, 5, 0, 10)
-}
-
-func TestMoveBackwardPosition(t *testing.T) {
-	testMove(t, 5, 9, 10)
-}
-
-func TestMoveSamePosition(t *testing.T) {
-	testMove(t, 5, 5, 10)
-}
-
-func testMove(t *testing.T, id, to, max int) {
-	if max > len(tests) {
-		panic("max is greater than the number of tests")
-	}
-
-	q, err := queue.OpenQueue(":memory:")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer q.Close()
-
-	tx := q.BeginTxn(true)
-	defer tx.Discard()
-
-	slugs := []string{}
-	for _, song := range tests[:max] {
-		id, err := tx.Enqueue(song)
-		if err != nil {
-			t.Fatal(err)
-		}
-		s, err := tx.FindByID(id)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		slugs = append(slugs, s.Slug)
-	}
-
-	err = tx.Move(id, to)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	expectedOrder := []string{}
-
-	// Note: only works because ID = position without any previous remove operations
-	if to < id {
-		expectedOrder = append(expectedOrder, slugs[:to]...)
-		expectedOrder = append(expectedOrder, slugs[id])
-		expectedOrder = append(expectedOrder, slugs[to:id]...)
-		expectedOrder = append(expectedOrder, slugs[id+1:]...)
-	} else {
-		expectedOrder = append(expectedOrder, slugs[:id]...)
-		expectedOrder = append(expectedOrder, slugs[id+1:to+1]...)
-		expectedOrder = append(expectedOrder, slugs[id])
-		expectedOrder = append(expectedOrder, slugs[to+1:]...)
-	}
-
-	t.Log(slugs)
-	t.Log(expectedOrder)
-
-	songs, err := tx.List(0, max)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	for i, song := range songs {
-		if song.Slug != expectedOrder[i] {
-			t.Errorf("expected %s, got %s", expectedOrder[i], song.Slug)
-		}
-	}
 }
