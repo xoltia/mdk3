@@ -23,6 +23,8 @@ const (
 	recordTypeSequence
 	// recordTypeSlugIndex is a record type for storing the slug index.
 	recordTypeSlugIndex
+	// recordTypeVersion is a record type for storing the version.
+	recordTypeVersion
 )
 
 const headNilID = -1

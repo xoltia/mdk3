@@ -1,7 +1,19 @@
 package queue
 
 import (
+	"encoding/binary"
+	"errors"
+	"fmt"
+
 	badger "github.com/dgraph-io/badger/v4"
+)
+
+const (
+	version uint32 = 0
+)
+
+var (
+	ErrVersionMismatch = errors.New("version mismatch")
 )
 
 type Queue struct {
@@ -30,6 +42,12 @@ func OpenQueue(path string) (*Queue, error) {
 		return nil, err
 	}
 
+	if v, err := checkVersion(db); err != nil {
+		return nil, err
+	} else if v != version {
+		return nil, fmt.Errorf("%w: expected %d, got %d", ErrVersionMismatch, version, v)
+	}
+
 	return &Queue{
 		db: db,
 		id: seq,
@@ -55,4 +73,28 @@ func (q *Queue) Iterate(f func(QueuedSong) bool) error {
 	defer tx.Discard()
 
 	return tx.IterateFromHead(f)
+}
+
+func checkVersion(db *badger.DB) (v uint32, err error) {
+	err = db.View(func(txn *badger.Txn) error {
+		item, err := txn.Get([]byte{byte(recordTypeVersion)})
+		if err != nil {
+			return err
+		}
+
+		return item.Value(func(val []byte) error {
+			v = binary.BigEndian.Uint32(val)
+			return nil
+		})
+	})
+	// Set version if not set already (first run)
+	if errors.Is(err, badger.ErrKeyNotFound) {
+		err = db.Update(func(txn *badger.Txn) error {
+			versionBytes := [4]byte{byte(recordTypeVersion)}
+			binary.BigEndian.PutUint32(versionBytes[:], version)
+			return txn.Set([]byte{byte(recordTypeVersion)}, versionBytes[:])
+		})
+		v = version
+	}
+	return
 }
