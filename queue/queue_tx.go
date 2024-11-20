@@ -282,7 +282,12 @@ func (qtx *QueueTx) Move(id, newPosition int) error {
 		return ErrMoveOutOfBounds
 	}
 
-	return qtx.moveWithoutBoundCheck(id, currentPosition, newPosition)
+	idAtNewPos, err := qtx.idRelativeToHead(newPosition)
+	if err != nil {
+		return err
+	}
+
+	return qtx.moveWithoutBoundCheck(id, idAtNewPos, currentPosition, newPosition)
 }
 
 // putSong writes a new song to the database.
@@ -499,7 +504,7 @@ func (qtx *QueueTx) idRelativeToHead(distance int) (sid int, err error) {
 	}
 
 	if head == headNilID {
-		err = ErrQueueEmpty
+		err = ErrSongNotFound
 		return
 	}
 
@@ -552,16 +557,10 @@ func (qtx *QueueTx) distanceFromHeadByID(id int) (distance int, err error) {
 	return
 }
 
-func (qtx *QueueTx) moveWithoutBoundCheck(id, currentPosition, position int) error {
+func (qtx *QueueTx) moveWithoutBoundCheck(id, idAtNewPos, currentPosition, newPosition int) error {
 	// TODO: what the sigma is this?
 	// This function barely makes sense to me and probably needs a rewrite.
-
-	songIDAtPosition, err := qtx.idRelativeToHead(position)
-	if err != nil {
-		return err
-	}
-
-	if songIDAtPosition == id {
+	if idAtNewPos == id {
 		return nil
 	}
 
@@ -571,7 +570,7 @@ func (qtx *QueueTx) moveWithoutBoundCheck(id, currentPosition, position int) err
 	}
 
 	var it *songIterator
-	if currentPosition < position {
+	if currentPosition < newPosition {
 		it = qtx.songIteratorReverse()
 	} else {
 		it = qtx.songIterator()
@@ -579,7 +578,7 @@ func (qtx *QueueTx) moveWithoutBoundCheck(id, currentPosition, position int) err
 
 	defer it.Close()
 
-	it.seekID(songIDAtPosition)
+	it.seekID(idAtNewPos)
 	lastSong, err := it.song()
 	if err != nil {
 		return err
@@ -612,13 +611,13 @@ func (qtx *QueueTx) moveWithoutBoundCheck(id, currentPosition, position int) err
 		it.Next()
 	}
 
-	currentSong.ID = songIDAtPosition
-	err = qtx.set(songIDAtPosition, currentSong)
+	currentSong.ID = idAtNewPos
+	err = qtx.set(idAtNewPos, currentSong)
 	if err != nil {
 		return err
 	}
 
-	err = qtx.setSlugID(currentSong.Slug, songIDAtPosition)
+	err = qtx.setSlugID(currentSong.Slug, idAtNewPos)
 	return err
 }
 
