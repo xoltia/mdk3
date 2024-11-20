@@ -7,7 +7,8 @@ import (
 	"github.com/xoltia/mdk3/queue"
 )
 
-func TestMain(m *testing.M) {
+// Needed for tests that need consistent slug order
+func seedRandomSlugs() {
 	var seed [32]byte
 	for i := range seed {
 		seed[i] = 0
@@ -114,6 +115,7 @@ func TestQueueDequeue(t *testing.T) {
 }
 
 func TestQueueRemove(t *testing.T) {
+	seedRandomSlugs()
 	q, err := queue.OpenQueue(":memory:")
 	if err != nil {
 		t.Fatal(err)
