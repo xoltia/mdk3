@@ -183,7 +183,7 @@ func (qtx *QueueTx) IterateFromHead(f func(song QueuedSong) bool) error {
 func (qtx *QueueTx) FindBySlug(slug string) (song QueuedSong, err error) {
 	slugIndexKey := make([]byte, 1+len(slug))
 	slugIndexKey[0] = byte(recordTypeSlugIndex)
-	copy(slugIndexKey[1:], []byte(slug))
+	copy(slugIndexKey[1:], slug)
 
 	item, err := qtx.txn.Get(slugIndexKey)
 	if err != nil {
@@ -314,18 +314,20 @@ func (qtx *QueueTx) putSong(song NewSong) (id int, err error) {
 	return id, qtx.set(id, queuedSong)
 }
 
+// clearSlugIndex removes a slug index from the database.
 func (qtx *QueueTx) clearSlugIndex(slugWithDedupeNumber string) error {
 	slugIndexKey := make([]byte, 1+len(slugWithDedupeNumber))
 	slugIndexKey[0] = byte(recordTypeSlugIndex)
-	copy(slugIndexKey[1:], []byte(slugWithDedupeNumber))
+	copy(slugIndexKey[1:], slugWithDedupeNumber)
 
 	return qtx.txn.Delete(slugIndexKey)
 }
 
+// setSlugID creates and index record for a slug.
 func (qtx *QueueTx) setSlugID(slug string, id int) error {
 	slugIndexKey := make([]byte, 1+len(slug))
 	slugIndexKey[0] = byte(recordTypeSlugIndex)
-	copy(slugIndexKey[1:], []byte(slug))
+	copy(slugIndexKey[1:], slug)
 
 	idValue := [8]byte{}
 	binary.BigEndian.PutUint64(idValue[:], uint64(id))
@@ -333,10 +335,14 @@ func (qtx *QueueTx) setSlugID(slug string, id int) error {
 	return qtx.txn.Set(slugIndexKey, idValue[:])
 }
 
+// indexSlugFindNonDuplicate finds a non-duplicate slug given a slug prefix.
+// Returns the slug prefix plus a sequence number if the slug is a duplicate.
+// The sequence number is the highest sequence number found for the slug plus one,
+// reseting only when the slug is not found in the index.
 func (qtx *QueueTx) indexSlugFindNonDuplicate(slug string, id int) (string, error) {
 	slugKey := make([]byte, 1+len(slug))
 	slugKey[0] = byte(recordTypeSlugIndex)
-	copy(slugKey[1:], []byte(slug))
+	copy(slugKey[1:], slug)
 
 	slugIterator := qtx.txn.NewIterator(badger.IteratorOptions{
 		Prefix: slugKey,
@@ -377,7 +383,7 @@ func (qtx *QueueTx) indexSlugFindNonDuplicate(slug string, id int) (string, erro
 
 	slugIndexKey := make([]byte, 1+len(deduplicatedSlug))
 	slugIndexKey[0] = byte(recordTypeSlugIndex)
-	copy(slugIndexKey[1:], []byte(deduplicatedSlug))
+	copy(slugIndexKey[1:], deduplicatedSlug)
 
 	err := qtx.setSlugID(deduplicatedSlug, id)
 	return deduplicatedSlug, err
@@ -461,10 +467,22 @@ func (qtx *QueueTx) updateHead(head int) error {
 	return qtx.writeHead(nextID)
 }
 
+// set writes a song to the database with a given ID.
+func (qtx *QueueTx) set(id int, song QueuedSong) error {
+	buff := new(bytes.Buffer)
+	err := gob.NewEncoder(buff).Encode(song)
+	if err != nil {
+		return fmt.Errorf("cannot encode queued song: %w", err)
+	}
+
+	key := [9]byte{byte(recordTypeQueuedSong)}
+	binary.BigEndian.PutUint64(key[1:], uint64(id))
+	return qtx.txn.Set(key[:], buff.Bytes())
+}
+
 func (qtx *QueueTx) songIterator() *songIterator {
 	return qtx.songIteratorWithOptions(25, false)
 }
-
 func (qtx *QueueTx) songIteratorReverse() *songIterator {
 	iter := qtx.songIteratorWithOptions(25, true)
 	iter.Rewind()
@@ -497,6 +515,8 @@ func (qtx *QueueTx) songIteratorWithOptions(prefetch int, reverse bool) *songIte
 //	[ 1 2 4 5 x 6 7 8 9 ] // move 4, 5 down
 //	[ 1 2 4 3 5 6 7 8 9 ] // insert 3
 
+// idRelativeToHead returns the ID at a position relative to the head.
+// For example, 0 is the head -1 is the last dequeued song, 1 is the next song.
 func (qtx *QueueTx) idRelativeToHead(distance int) (sid int, err error) {
 	head, err := qtx.headID()
 	if err != nil {
@@ -530,6 +550,7 @@ func (qtx *QueueTx) idRelativeToHead(distance int) (sid int, err error) {
 	return
 }
 
+// distanceFromHeadByID returns the position of a song by ID.
 func (qtx *QueueTx) distanceFromHeadByID(id int) (distance int, err error) {
 	head, err := qtx.headID()
 	if err != nil {
@@ -557,6 +578,8 @@ func (qtx *QueueTx) distanceFromHeadByID(id int) (distance int, err error) {
 	return
 }
 
+// moveWithoutBoundCheck moves a song to a new, assuming the ID of the new position, assuming
+// the IDs and positions of the songs are correct.
 func (qtx *QueueTx) moveWithoutBoundCheck(id, idAtNewPos, currentPosition, newPosition int) error {
 	// TODO: what the sigma is this?
 	// This function barely makes sense to me and probably needs a rewrite.
@@ -619,16 +642,4 @@ func (qtx *QueueTx) moveWithoutBoundCheck(id, idAtNewPos, currentPosition, newPo
 
 	err = qtx.setSlugID(currentSong.Slug, idAtNewPos)
 	return err
-}
-
-func (qtx *QueueTx) set(id int, song QueuedSong) error {
-	buff := new(bytes.Buffer)
-	err := gob.NewEncoder(buff).Encode(song)
-	if err != nil {
-		return fmt.Errorf("cannot encode queued song: %w", err)
-	}
-
-	key := [9]byte{byte(recordTypeQueuedSong)}
-	binary.BigEndian.PutUint64(key[1:], uint64(id))
-	return qtx.txn.Set(key[:], buff.Bytes())
 }
