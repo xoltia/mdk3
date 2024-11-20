@@ -21,15 +21,18 @@ func init() {
 	}
 
 	var seed [32]byte
-	_, err := crand.Read(seed[:])
-	if err != nil {
+	if _, err := crand.Read(seed[:]); err != nil {
 		panic(err)
 	}
-	s := rand.NewChaCha8(seed)
-	r := rand.New(s)
-	zipf = rand.NewZipf(r, 1.1, 36.5, uint64(len(slugs)-1))
+	SeedSlugGenerator(seed)
 }
 
 func randomSlug() string {
 	return slugs[zipf.Uint64()]
+}
+
+func SeedSlugGenerator(seed [32]byte) {
+	s := rand.NewChaCha8(seed)
+	r := rand.New(s)
+	zipf = rand.NewZipf(r, 1.1, 36.5, uint64(len(slugs)-1))
 }
