@@ -246,12 +246,15 @@ func (h *queueCommandHandler) cmdEnqueue(ctx context.Context, data cmdroute.Comm
 	defer h.userCountsMu.Unlock()
 	userCount := h.userCounts[s.UserID]
 
-	if userCount >= h.userLimit {
+	adminPass := false
+	if userCount >= h.userLimit && !h.isAdmin(data.Event.Member) {
 		return &api.InteractionResponseData{
 			Content:         option.NewNullableString("You have reached the limit of songs you can enqueue."),
 			Flags:           discord.EphemeralMessage,
 			AllowedMentions: &api.AllowedMentions{},
 		}
+	} else if userCount >= h.userLimit {
+		adminPass = true
 	}
 
 	queuedID, err := tx.Enqueue(s)
@@ -301,6 +304,9 @@ func (h *queueCommandHandler) cmdEnqueue(ctx context.Context, data cmdroute.Comm
 
 	embed := discord.NewEmbed()
 	embed.Title = "Song Enqueued"
+	if adminPass {
+		embed.Title += " (Limit Bypassed)"
+	}
 	embed.Description = s.Title
 	embed.Thumbnail = &discord.EmbedThumbnail{URL: s.ThumbnailURL}
 	embed.Footer = &discord.EmbedFooter{Text: fmt.Sprintf("ID: %s", queued.Slug)}
