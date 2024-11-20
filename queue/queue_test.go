@@ -7,7 +7,7 @@ import (
 	"github.com/xoltia/mdk3/queue"
 )
 
-func init() {
+func TestMain(m *testing.M) {
 	var seed [32]byte
 	for i := range seed {
 		seed[i] = 0
