@@ -122,7 +122,11 @@ func loopPlayMPV(ctx context.Context, q *queue.Queue, h *queueCommandHandler, mp
 			continue
 		}
 
-		_, err = h.s.SendMessage(discord.ChannelID(channelSnowflake), fmt.Sprintf("<@%s>", song.UserID), discord.Embed{
+		messageContent := ""
+		if !*disablePing {
+			messageContent = fmt.Sprintf("<@%s>", song.UserID)
+		}
+		_, err = h.s.SendMessage(discord.ChannelID(channelSnowflake), messageContent, discord.Embed{
 			Title:       song.Title,
 			Description: fmt.Sprintf("Your song is up next! The song will start in %s unless started manually.", playbackTime),
 		})

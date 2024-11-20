@@ -29,6 +29,7 @@ var (
 	guildID      = flag.String("guild-id", "", "guild id to use for commands")
 	channelID    = flag.String("channel-id", "", "channel id to use for commands")
 	adminRoles   = flag.String("admin-roles", "", "comma separated list of admin role ids")
+	disablePing  = flag.Bool("no-ping", false, "disable user pings when a song is dequeued")
 )
 
 func main() {
