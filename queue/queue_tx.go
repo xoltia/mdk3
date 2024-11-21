@@ -25,6 +25,8 @@ const (
 	recordTypeSlugIndex
 	// recordTypeVersion is a record type for storing the version.
 	recordTypeVersion
+	// recordTypeUserStats is a record type for storing a user's queue stats for quick retrieval.
+	recordTypeUserStats
 )
 
 const headNilID = -1
@@ -57,7 +59,12 @@ func (qtx *QueueTx) Enqueue(song NewSong) (id int, err error) {
 	if err != nil {
 		return
 	}
-	err = qtx.checkHead(id)
+	if err = qtx.checkHead(id); err != nil {
+		return
+	}
+	err = qtx.updateUserStats(song.UserID, func(s *UserStats) {
+		s.QueuedCount++
+	})
 	return
 }
 
@@ -80,7 +87,14 @@ func (qtx *QueueTx) Dequeue() (headSong QueuedSong, err error) {
 	}
 
 	headSong.DequeuedAt = time.Now()
-	err = qtx.set(headSong.ID, headSong)
+	if err = qtx.set(headSong.ID, headSong); err != nil {
+		return
+	}
+
+	err = qtx.updateUserStats(headSong.UserID, func(s *UserStats) {
+		s.DequeuedCount++
+		s.QueuedCount--
+	})
 	return
 }
 
@@ -96,11 +110,24 @@ func (qtx *QueueTx) Remove(id int) (err error) {
 		return
 	}
 
+	updateUserFunc := func(s *UserStats) {
+		s.DequeuedCount--
+		s.DeletedCount++
+	}
 	if song.DequeuedAt.IsZero() {
 		err = qtx.clearSlugIndex(song.Slug)
 		if err != nil {
 			return
 		}
+		updateUserFunc = func(s *UserStats) {
+			s.QueuedCount--
+			s.DeletedCount++
+		}
+	}
+
+	err = qtx.updateUserStats(song.UserID, updateUserFunc)
+	if err != nil {
+		return
 	}
 
 	head, err := qtx.headID()
@@ -315,6 +342,8 @@ func (qtx *QueueTx) Empty() (bool, error) {
 // have not yet been dequeued can be moved. Songs cannot be moved
 // below the head of the queue.
 func (qtx *QueueTx) Move(id, newPosition int) error {
+	// WARNING: Should never move below queue line or many assumptions will be broken!
+
 	currentPosition, err := qtx.distanceFromHeadByID(id)
 	if err != nil {
 		return err

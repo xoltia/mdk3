@@ -264,6 +264,95 @@ func TestQueueRemove(t *testing.T) {
 	}
 }
 
+func TestUserStats(t *testing.T) {
+	q, err := queue.OpenQueue(":memory:")
+	if err != nil {
+		return
+	}
+	defer q.Close()
+
+	tx := q.BeginTxn(true)
+	defer tx.Discard()
+
+	_, err = tx.GetUserStats("1")
+	if err != queue.ErrUserStatsNotFound {
+		t.Errorf("expected %v, got %v", queue.ErrUserStatsNotFound, err)
+	}
+
+	_, err = tx.Enqueue(queue.NewSong{
+		UserID: "1",
+	})
+	if err != nil {
+		t.Error(err)
+	}
+
+	stats, err := tx.GetUserStats("1")
+	if err != nil {
+		t.Error(err)
+	}
+	if stats.QueuedCount != 1 || stats.DequeuedCount != 0 || stats.DeletedCount != 0 {
+		t.Errorf("unexpected stats (1): %v", stats)
+	}
+
+	for range 10 {
+		_, err = tx.Enqueue(queue.NewSong{
+			UserID: "2",
+		})
+		if err != nil {
+			t.Error(err)
+		}
+	}
+
+	stats, err = tx.GetUserStats("2")
+	if err != nil {
+		t.Error(err)
+	}
+	if stats.QueuedCount != 10 || stats.DequeuedCount != 0 || stats.DeletedCount != 0 {
+		t.Errorf("unexpected stats (2): %v", stats)
+	}
+
+	_, err = tx.Dequeue()
+	if err != nil {
+		t.Error(err)
+	}
+
+	stats, err = tx.GetUserStats("1")
+	if err != nil {
+		t.Error(err)
+	}
+	if stats.QueuedCount != 0 || stats.DequeuedCount != 1 || stats.DeletedCount != 0 {
+		t.Errorf("unexpected stats after dequeues: %v", stats)
+	}
+
+	err = tx.Remove(0)
+	if err != nil {
+		t.Error(err)
+	}
+
+	stats, err = tx.GetUserStats("1")
+	if err != nil {
+		t.Error(err)
+	}
+	if stats.QueuedCount != 0 || stats.DequeuedCount != 0 || stats.DeletedCount != 1 {
+		t.Errorf("unexpected stats after remove: %v", stats)
+	}
+
+	for i := 1; i <= 10; i++ {
+		err = tx.Remove(i)
+		if err != nil {
+			t.Log(err)
+		}
+	}
+
+	stats, err = tx.GetUserStats("2")
+	if err != nil {
+		t.Error(err)
+	}
+	if stats.QueuedCount != 0 || stats.DequeuedCount != 0 || stats.DeletedCount != 10 {
+		t.Errorf("unexpected stats after remove: %v", stats)
+	}
+}
+
 func TestMoveForwardPosition(t *testing.T) {
 	testMove(t, 5, 0, 10)
 }

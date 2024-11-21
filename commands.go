@@ -9,7 +9,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/diamondburned/arikawa/v3/api"
@@ -91,13 +90,11 @@ var commands = []api.CreateCommandData{
 
 type queueCommandHandler struct {
 	*cmdroute.Router
-	s            *state.State
-	q            *queue.Queue
-	pageSize     int
-	userLimit    int
-	userCountsMu sync.Mutex
-	userCounts   map[string]int
-	adminRoles   []discord.RoleID
+	s          *state.State
+	q          *queue.Queue
+	pageSize   int
+	userLimit  int
+	adminRoles []discord.RoleID
 }
 
 type queueCommandHandlerOption func(*queueCommandHandler)
@@ -120,30 +117,18 @@ func withAdminRoles(roles []string) queueCommandHandlerOption {
 	}
 }
 
-// func withPageSize(size int) queueCommandHandlerOption {
-// 	return func(h *queueCommandHandler) {
-// 		h.pageSize = size
-// 	}
-// }
-
 func newHandler(s *state.State, q *queue.Queue, options ...queueCommandHandlerOption) *queueCommandHandler {
 	h := &queueCommandHandler{
 		s:          s,
 		q:          q,
 		userLimit:  1,
 		pageSize:   5,
-		userCounts: make(map[string]int),
 		adminRoles: []discord.RoleID{},
 	}
 
 	for _, opt := range options {
 		opt(h)
 	}
-
-	q.Iterate(func(song queue.QueuedSong) bool {
-		h.userCounts[song.UserID]++
-		return true
-	})
 
 	h.s.AddInteractionHandlerFunc(h.handleComponentInteraction)
 	h.Router = cmdroute.NewRouter()
@@ -157,16 +142,6 @@ func newHandler(s *state.State, q *queue.Queue, options ...queueCommandHandlerOp
 	h.AddFunc("stop", h.cmdStop)
 
 	return h
-}
-
-// decrementUserCount decrements the user count for the given user ID
-// (such as when a song is dequeued). Must have the queue lock before calling.
-func (h *queueCommandHandler) decrementUserCount(userID string) {
-	h.userCountsMu.Lock()
-	defer h.userCountsMu.Unlock()
-	if count := h.userCounts[userID]; count > 0 {
-		h.userCounts[userID]--
-	}
 }
 
 func (h *queueCommandHandler) cmdStart(_ context.Context, data cmdroute.CommandData) *api.InteractionResponseData {
@@ -243,10 +218,11 @@ func (h *queueCommandHandler) cmdEnqueue(ctx context.Context, data cmdroute.Comm
 	tx := h.q.BeginTxn(true)
 	defer tx.Discard()
 
-	h.userCountsMu.Lock()
-	defer h.userCountsMu.Unlock()
-	userCount := h.userCounts[s.UserID]
-
+	userStats, err := tx.GetUserStats(data.Event.Member.User.ID.String())
+	if err != nil && err != queue.ErrUserStatsNotFound {
+		return errorResponse(err)
+	}
+	userCount := int(userStats.QueuedCount)
 	adminPass := false
 	if userCount >= h.userLimit && !h.isAdmin(data.Event.Member) {
 		return &api.InteractionResponseData{
@@ -279,7 +255,6 @@ func (h *queueCommandHandler) cmdEnqueue(ctx context.Context, data cmdroute.Comm
 	if err != nil {
 		return errorResponse(err)
 	}
-	h.userCounts[s.UserID]++
 
 	queued, err := tx.GetByID(queuedID)
 	if err != nil {
@@ -442,8 +417,6 @@ func (h *queueCommandHandler) cmdRemove(_ context.Context, data cmdroute.Command
 		log.Println("cannot commit transaction:", err)
 		return errorResponse(err)
 	}
-
-	h.decrementUserCount(song.UserID)
 
 	return &api.InteractionResponseData{
 		Content:         option.NewNullableString("Song removed."),

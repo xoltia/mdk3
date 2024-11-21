@@ -76,7 +76,6 @@ func loopPlayMPV(ctx context.Context, q *queue.Queue, h *queueCommandHandler, mp
 			log.Println("cannot commit:", err)
 			break
 		}
-		h.decrementUserCount(song.UserID)
 		log.Println("playing", song.Title)
 
 		var username string
