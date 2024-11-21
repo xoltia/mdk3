@@ -72,6 +72,67 @@ func TestQueueEnqueueManySongs(t *testing.T) {
 	}
 }
 
+func TestQueueLastDequeued(t *testing.T) {
+	q, err := queue.OpenQueue(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer q.Close()
+
+	tx := q.BeginTxn(true)
+	defer tx.Discard()
+
+	_, err = tx.LastDequeued()
+	if err != queue.ErrSongNotFound {
+		t.Fatalf("expected %v, got %v", queue.ErrSongNotFound, err)
+	}
+
+	if _, err := tx.Enqueue(tests[0]); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := tx.Dequeue(); err != nil {
+		t.Fatal(err)
+	}
+
+	count, err := tx.Count()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Log(count)
+
+	song, err := tx.LastDequeued()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if song.NewSong != tests[0] {
+		t.Fatalf("expected %v, got %v", tests[0], song)
+	}
+
+	for _, song := range tests[1:] {
+		_, err := tx.Enqueue(song)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	song, err = tx.Dequeue()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Log(song.DequeuedAt)
+
+	if song.DequeuedAt.IsZero() {
+		t.Error("expected DequeuedAt not to be zero")
+	}
+
+	if song.NewSong != tests[1] {
+		t.Errorf("expected %v, got %v", tests[1], song)
+	}
+}
+
 func TestQueueDequeue(t *testing.T) {
 	q, err := queue.OpenQueue(":memory:")
 	if err != nil {

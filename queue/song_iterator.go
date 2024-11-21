@@ -12,6 +12,10 @@ type songIterator struct {
 	*badger.Iterator
 }
 
+func (si *songIterator) seekMax() {
+	si.Seek([]byte{byte(recordTypeQueuedSong), 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff})
+}
+
 func (si *songIterator) seekID(id int) {
 	songKey := [9]byte{byte(recordTypeQueuedSong)}
 	binary.BigEndian.PutUint64(songKey[1:], uint64(id))

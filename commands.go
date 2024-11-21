@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/url"
@@ -257,6 +258,23 @@ func (h *queueCommandHandler) cmdEnqueue(ctx context.Context, data cmdroute.Comm
 		adminPass = true
 	}
 
+	queueDuration := time.Duration(0)
+
+	lastSong, err := tx.LastDequeued()
+	if err != nil && !errors.Is(err, queue.ErrSongNotFound) {
+		log.Printf("unable to get last dequeue: %s", err)
+	} else if err == nil {
+		queueDuration += lastSong.Duration - time.Since(lastSong.DequeuedAt)
+	}
+
+	err = tx.IterateFromHead(func(song queue.QueuedSong) bool {
+		queueDuration += song.Duration
+		return true
+	})
+	if err != nil {
+		return errorResponse(err)
+	}
+
 	queuedID, err := tx.Enqueue(s)
 	if err != nil {
 		return errorResponse(err)
@@ -274,25 +292,10 @@ func (h *queueCommandHandler) cmdEnqueue(ctx context.Context, data cmdroute.Comm
 		log.Println("cannot get queue position:", err)
 		return errorResponse(err)
 	}
-	queueDuration := time.Duration(0)
-
-	// TODO: Reimplement
-	// if !h.q.lastDequeueTime.IsZero() {
-	// 	queueDuration += h.q.lastDequeueDuration
-	// 	queueDuration -= time.Since(h.q.lastDequeueTime)
-	// }
-
-	err = tx.IterateFromHead(func(song queue.QueuedSong) bool {
-		queueDuration += song.Duration
-		return true
-	})
-
-	if err != nil {
-		return errorResponse(err)
-	}
 
 	playTimeString := "Next"
 	if queuePosition > 1 {
+		queueDuration += (*playbackTime) * time.Duration(queuePosition-1)
 		playTime := time.Now().Add(queueDuration)
 		playTimeString = fmt.Sprintf("<t:%d:t>", playTime.Unix())
 	}

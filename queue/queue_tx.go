@@ -179,6 +179,53 @@ func (qtx *QueueTx) IterateFromHead(f func(song QueuedSong) bool) error {
 	return nil
 }
 
+// LastDequeued returns that was dequeued last.
+func (qtx *QueueTx) LastDequeued() (song QueuedSong, err error) {
+	found := false
+	err = qtx.IterateBackwardsFromHead(func(s QueuedSong) bool {
+		song = s
+		found = true
+		return false
+	})
+	if err != nil {
+		return
+	}
+	if !found {
+		err = ErrSongNotFound
+	}
+	return
+}
+
+// IterateBackwardsFromHead iterates songs starting from the element before the head in reverse order.
+func (qtx *QueueTx) IterateBackwardsFromHead(f func(song QueuedSong) bool) error {
+	iter := qtx.songIteratorReverse()
+	defer iter.Close()
+	iter.seekMax()
+
+	head, err := qtx.headID()
+	if err != nil {
+		return err
+	}
+
+	if head != headNilID {
+		iter.seekID(head)
+		iter.Next()
+	}
+
+	for iter.Valid() {
+		song, err := iter.song()
+		if err != nil {
+			return err
+		}
+		if !f(song) {
+			break
+		}
+		iter.Next()
+	}
+
+	return nil
+}
+
 // FindBySlug returns a song by slug.
 func (qtx *QueueTx) FindBySlug(slug string) (song QueuedSong, err error) {
 	slugIndexKey := make([]byte, 1+len(slug))
@@ -485,7 +532,6 @@ func (qtx *QueueTx) songIterator() *songIterator {
 }
 func (qtx *QueueTx) songIteratorReverse() *songIterator {
 	iter := qtx.songIteratorWithOptions(25, true)
-	iter.Rewind()
 	return iter
 }
 
