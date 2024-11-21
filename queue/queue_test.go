@@ -51,7 +51,7 @@ func TestQueueEnqueueManySongs(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		song, err := tx.FindByID(sid)
+		song, err := tx.GetByID(sid)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -89,7 +89,7 @@ func TestQueueUpdate(t *testing.T) {
 		}
 	}
 
-	song, err := tx.FindByID(10)
+	song, err := tx.GetByID(10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +107,7 @@ func TestQueueUpdate(t *testing.T) {
 	expectedSong := song
 	expectedSong.NewSong = updatedSong
 
-	song, err = tx.FindByID(10)
+	song, err = tx.GetByID(10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -240,7 +240,7 @@ func TestQueueRemove(t *testing.T) {
 
 	// Always first because of the seed
 	// Change this if the seed changes
-	song, err := tx.FindBySlug("suha")
+	song, err := tx.GetBySlug("suha")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -296,7 +296,7 @@ func testMove(t *testing.T, id, to, max int) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		s, err := tx.FindByID(id)
+		s, err := tx.GetByID(id)
 		if err != nil {
 			t.Fatal(err)
 		}

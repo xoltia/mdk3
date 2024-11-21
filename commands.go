@@ -281,7 +281,7 @@ func (h *queueCommandHandler) cmdEnqueue(ctx context.Context, data cmdroute.Comm
 	}
 	h.userCounts[s.UserID]++
 
-	queued, err := tx.FindByID(queuedID)
+	queued, err := tx.GetByID(queuedID)
 	if err != nil {
 		log.Println("cannot find queued song:", err)
 		return errorResponse(err)
@@ -410,7 +410,7 @@ func (h *queueCommandHandler) cmdRemove(_ context.Context, data cmdroute.Command
 	defer tx.Discard()
 
 	slug := options.ID
-	song, err := tx.FindBySlug(slug)
+	song, err := tx.GetBySlug(slug)
 	if err != nil && err != queue.ErrSongNotFound {
 		log.Println("cannot find song by slug:", err)
 		return errorResponse(err)
@@ -480,7 +480,7 @@ func (h *queueCommandHandler) cmdSwap(ctx context.Context, data cmdroute.Command
 	defer tx.Discard()
 
 	slug := options.ID
-	song, err := tx.FindBySlug(slug)
+	song, err := tx.GetBySlug(slug)
 	if err != nil && err != queue.ErrSongNotFound {
 		log.Println("cannot find song by slug:", err)
 		return errorResponse(err)
@@ -554,7 +554,7 @@ func (h *queueCommandHandler) cmdMove(_ context.Context, data cmdroute.CommandDa
 	defer tx.Discard()
 
 	slug := options.ID
-	song, err := tx.FindBySlug(slug)
+	song, err := tx.GetBySlug(slug)
 	if err != nil && err != queue.ErrSongNotFound {
 		log.Println("cannot find song by slug:", err)
 		return errorResponse(err)

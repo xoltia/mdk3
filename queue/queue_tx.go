@@ -91,7 +91,7 @@ func (qtx *QueueTx) Peek() (headSong QueuedSong, err error) {
 
 // Remove deletes a song by ID.
 func (qtx *QueueTx) Remove(id int) (err error) {
-	song, err := qtx.FindByID(id)
+	song, err := qtx.GetByID(id)
 	if err != nil {
 		return
 	}
@@ -126,7 +126,7 @@ func (qtx *QueueTx) Remove(id int) (err error) {
 
 // Update changes a previously queued song by ID.
 func (qtx *QueueTx) Update(id int, song NewSong) error {
-	oldSong, err := qtx.FindByID(id)
+	oldSong, err := qtx.GetByID(id)
 	if err != nil {
 		return err
 	}
@@ -226,8 +226,8 @@ func (qtx *QueueTx) IterateBackwardsFromHead(f func(song QueuedSong) bool) error
 	return nil
 }
 
-// FindBySlug returns a song by slug.
-func (qtx *QueueTx) FindBySlug(slug string) (song QueuedSong, err error) {
+// GetBySlug returns a song by slug.
+func (qtx *QueueTx) GetBySlug(slug string) (song QueuedSong, err error) {
 	slugIndexKey := make([]byte, 1+len(slug))
 	slugIndexKey[0] = byte(recordTypeSlugIndex)
 	copy(slugIndexKey[1:], slug)
@@ -242,14 +242,14 @@ func (qtx *QueueTx) FindBySlug(slug string) (song QueuedSong, err error) {
 
 	err = item.Value(func(val []byte) error {
 		id := int(binary.BigEndian.Uint64(val))
-		song, err = qtx.FindByID(id)
+		song, err = qtx.GetByID(id)
 		return err
 	})
 	return
 }
 
-// FindByID returns a song by ID.
-func (qtx *QueueTx) FindByID(id int) (song QueuedSong, err error) {
+// GetByID returns a song by ID.
+func (qtx *QueueTx) GetByID(id int) (song QueuedSong, err error) {
 	key := [9]byte{byte(recordTypeQueuedSong)}
 	binary.BigEndian.PutUint64(key[1:], uint64(id))
 	item, err := qtx.txn.Get(key[:])
@@ -633,7 +633,7 @@ func (qtx *QueueTx) moveWithoutBoundCheck(id, idAtNewPos, currentPosition, newPo
 		return nil
 	}
 
-	currentSong, err := qtx.FindByID(id)
+	currentSong, err := qtx.GetByID(id)
 	if err != nil {
 		return err
 	}
