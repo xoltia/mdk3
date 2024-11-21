@@ -72,6 +72,51 @@ func TestQueueEnqueueManySongs(t *testing.T) {
 	}
 }
 
+func TestQueueUpdate(t *testing.T) {
+	q, err := queue.OpenQueue(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer q.Close()
+
+	tx := q.BeginTxn(true)
+	defer tx.Discard()
+
+	for _, song := range tests {
+		_, err := tx.Enqueue(song)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	song, err := tx.FindByID(10)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	updatedSong := song.NewSong
+	updatedSong.Title = "Updated Title"
+	updatedSong.SongURL = "https://youtu.be/YKEhO5jhP3g?si=U1ozUB6Av4Gw8_kG"
+	updatedSong.Duration = time.Duration(1234567890)
+
+	err = tx.Update(10, updatedSong)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	expectedSong := song
+	expectedSong.NewSong = updatedSong
+
+	song, err = tx.FindByID(10)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if song != expectedSong {
+		t.Errorf("expected %v, got %v", expectedSong, song)
+	}
+}
+
 func TestQueueLastDequeued(t *testing.T) {
 	q, err := queue.OpenQueue(":memory:")
 	if err != nil {
