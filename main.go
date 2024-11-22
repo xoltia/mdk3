@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -19,15 +20,27 @@ import (
 var configFile = flag.String("config", "config.toml", "config file")
 
 func main() {
-	cfg, err := loadConfig(*configFile)
-	if err != nil {
-		log.Fatalln("cannot load config:", err)
-	}
 
 	var exitCode int
 	defer func() {
 		os.Exit(exitCode)
 	}()
+
+	cfg, err := loadConfig(*configFile)
+	if err != nil {
+		validationErrs, ok := err.(validationErrors)
+		if ok {
+			fmt.Println("One ore more errors occurred while validating the config.")
+			fmt.Println("Please fix the following errors and try again:")
+			for _, e := range validationErrs {
+				fmt.Printf(" %s\n", e)
+			}
+		} else {
+			log.Println(err)
+		}
+		exitCode = 1
+		return
+	}
 
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	flag.Parse()
@@ -70,12 +83,6 @@ func main() {
 			log.Println("cannot gc queue:", err)
 		}
 	}()
-
-	if cfg.Discord.Token == "" {
-		log.Println("no discord token provided")
-		exitCode = 1
-		return
-	}
 
 	log.Println("starting discord bot")
 
