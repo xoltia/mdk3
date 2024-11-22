@@ -3,6 +3,7 @@ module github.com/xoltia/mdk3
 go 1.23.2
 
 require (
+	github.com/BurntSushi/toml v1.4.0
 	github.com/dgraph-io/badger/v4 v4.4.0
 	github.com/diamondburned/arikawa/v3 v3.4.0
 	github.com/fogleman/gg v1.3.0
@@ -14,7 +15,6 @@ require (
 )
 
 require (
-	github.com/BurntSushi/toml v1.4.0 // indirect
 	github.com/bitly/go-simplejson v0.5.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/dgraph-io/ristretto/v2 v2.0.0 // indirect

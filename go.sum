@@ -101,8 +101,6 @@ github.com/wader/goutubedl v0.0.0-20241107164926-f902ca5cee5b h1:lszA9dbgLJyYxCw
 github.com/wader/goutubedl v0.0.0-20241107164926-f902ca5cee5b/go.mod h1:5KXd5tImdbmz4JoVhePtbIokCwAfEhUVVx3WLHmjYuw=
 github.com/wader/osleaktest v0.0.0-20191111175233-f643b0fed071 h1:QkrG4Zr5OVFuC9aaMPmFI0ibfhBZlAgtzDYWfu7tqQk=
 github.com/wader/osleaktest v0.0.0-20191111175233-f643b0fed071/go.mod h1:XD6emOFPHVzb0+qQpiNOdPL2XZ0SRUM0N5JHuq6OmXo=
-github.com/xoltia/mpv v0.0.0-20241118160153-e5d254646a55 h1:cltEhGcIa2kZ9/nz9MqLktXEDBTwq1PiicJwc8+Apds=
-github.com/xoltia/mpv v0.0.0-20241118160153-e5d254646a55/go.mod h1:via4CTytFud1d70V6aUjUw7yTijAoLIrbMar7ZhH0XE=
 github.com/xoltia/mpv v0.0.0-20241119170524-0c154b4e444e h1:lsbe0t6OWmX2J/SY3OXz59JUr1I1cUy35t+otNoPAms=
 github.com/xoltia/mpv v0.0.0-20241119170524-0c154b4e444e/go.mod h1:via4CTytFud1d70V6aUjUw7yTijAoLIrbMar7ZhH0XE=
 github.com/yuin/goldmark v1.1.27/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=
