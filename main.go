@@ -33,6 +33,11 @@ var (
 )
 
 func main() {
+	var exitCode int
+	defer func() {
+		os.Exit(exitCode)
+	}()
+
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	flag.Parse()
 	goutubedl.Path = *ytdlpPath
@@ -48,7 +53,9 @@ func main() {
 
 	mpvClient, err := mpvProcess.OpenClient()
 	if err != nil {
-		log.Fatalln("cannot open mpv client:", err)
+		log.Println("cannot open mpv client:", err)
+		exitCode = 1
+		return
 	}
 
 	go func() {
@@ -60,7 +67,9 @@ func main() {
 
 	q, err := queue.OpenQueue(*queuePath)
 	if err != nil {
-		log.Fatalln("cannot open queue:", err)
+		log.Println("cannot open queue:", err)
+		exitCode = 1
+		return
 	}
 	defer q.Close()
 
@@ -72,7 +81,9 @@ func main() {
 	}()
 
 	if *discordToken == "" {
-		log.Fatalln("no discord token provided")
+		log.Println("no discord token provided")
+		exitCode = 1
+		return
 	}
 
 	log.Println("starting discord bot")
@@ -89,16 +100,22 @@ func main() {
 
 	guildSnowflake, err := discord.ParseSnowflake(*guildID)
 	if err != nil {
-		log.Fatalln("cannot parse guild id:", err)
+		log.Println("cannot parse guild id:", err)
+		exitCode = 1
+		return
 	}
 
 	application, err := s.CurrentApplication()
 	if err != nil {
-		log.Fatalln("cannot get application:", err)
+		log.Println("cannot get application:", err)
+		exitCode = 1
+		return
 	}
 
 	if _, err := s.BulkOverwriteGuildCommands(application.ID, discord.GuildID(guildSnowflake), commands); err != nil {
-		log.Fatalln("cannot update commands:", err)
+		log.Println("cannot update commands:", err)
+		exitCode = 1
+		return
 	}
 
 	// if err := cmdroute.OverwriteCommands(s, commands); err != nil {
@@ -110,5 +127,6 @@ func main() {
 	log.Println("connecting to discord, press Ctrl+C to exit")
 	if err := s.Connect(ctx); err != nil {
 		log.Println("cannot connect:", err)
+		exitCode = 1
 	}
 }
