@@ -16,8 +16,10 @@ import (
 	"github.com/xoltia/mpv"
 )
 
+var configFile = flag.String("config", "config.toml", "config file")
+
 func main() {
-	cfg, err := loadConfig("config.toml")
+	cfg, err := loadConfig(*configFile)
 	if err != nil {
 		log.Fatalln("cannot load config:", err)
 	}
