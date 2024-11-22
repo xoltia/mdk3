@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/BurntSushi/toml"
 	"github.com/diamondburned/arikawa/v3/discord"
 	"github.com/diamondburned/arikawa/v3/gateway"
 	"github.com/diamondburned/arikawa/v3/state"
@@ -20,7 +21,6 @@ import (
 var configFile = flag.String("config", "config.toml", "config file")
 
 func main() {
-
 	var exitCode int
 	defer func() {
 		os.Exit(exitCode)
@@ -28,15 +28,18 @@ func main() {
 
 	cfg, err := loadConfig(*configFile)
 	if err != nil {
-		validationErrs, ok := err.(validationErrors)
-		if ok {
+		switch v := err.(type) {
+		case toml.ParseError:
+			fmt.Println("An error occurred while parsing the config.")
+			fmt.Println(v.ErrorWithUsage())
+		case validationErrors:
 			fmt.Println("One ore more errors occurred while validating the config.")
 			fmt.Println("Please fix the following errors and try again:")
-			for _, e := range validationErrs {
+			for _, e := range v {
 				fmt.Printf(" %s\n", e)
 			}
-		} else {
-			log.Println(err)
+		default:
+			fmt.Println("An error occurred while loading the config:", err)
 		}
 		exitCode = 1
 		return
