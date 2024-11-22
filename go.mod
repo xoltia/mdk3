@@ -14,6 +14,7 @@ require (
 )
 
 require (
+	github.com/BurntSushi/toml v1.4.0 // indirect
 	github.com/bitly/go-simplejson v0.5.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/dgraph-io/ristretto/v2 v2.0.0 // indirect

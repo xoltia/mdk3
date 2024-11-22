@@ -4,12 +4,9 @@ import (
 	"context"
 	"flag"
 	"log"
-	"math"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
-	"time"
 
 	"github.com/diamondburned/arikawa/v3/discord"
 	"github.com/diamondburned/arikawa/v3/gateway"
@@ -19,20 +16,12 @@ import (
 	"github.com/xoltia/mpv"
 )
 
-var (
-	queuePath    = flag.String("queue-path", "queuedata", "path to store queue data")
-	playbackTime = flag.Duration("playback-time", 30*time.Second, "time to wait before playing the next song")
-	discordToken = flag.String("discord-token", "", "Discord bot token")
-	ytdlpPath    = flag.String("ytdlp-path", "", "path to yt-dlp binary")
-	userLimit    = flag.Int("user-limit", math.MaxInt, "number of songs a user can queue")
-	mpvPath      = flag.String("mpv-path", "mpv", "path to mpv binary")
-	guildID      = flag.String("guild-id", "", "guild id to use for commands")
-	channelID    = flag.String("channel-id", "", "channel id to use for commands")
-	adminRoles   = flag.String("admin-roles", "", "comma separated list of admin role ids")
-	disablePing  = flag.Bool("no-ping", false, "disable user pings when a song is dequeued")
-)
-
 func main() {
+	cfg, err := loadConfig("config.toml")
+	if err != nil {
+		log.Fatalln("cannot load config:", err)
+	}
+
 	var exitCode int
 	defer func() {
 		os.Exit(exitCode)
@@ -40,13 +29,13 @@ func main() {
 
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	flag.Parse()
-	goutubedl.Path = *ytdlpPath
+	goutubedl.Path = cfg.Binary.YTDLPath
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
 	mpvProcess := mpv.NewProcessWithOptions(mpv.ProcessOptions{
-		Path: *mpvPath,
+		Path: cfg.Binary.MPVPath,
 		Args: []string{"--force-window"},
 	})
 	defer mpvProcess.Close()
@@ -65,7 +54,7 @@ func main() {
 
 	log.Println("connected to mpv")
 
-	q, err := queue.OpenQueue(*queuePath)
+	q, err := queue.OpenQueue(cfg.QueuePath)
 	if err != nil {
 		log.Println("cannot open queue:", err)
 		exitCode = 1
@@ -80,7 +69,7 @@ func main() {
 		}
 	}()
 
-	if *discordToken == "" {
+	if cfg.Discord.Token == "" {
 		log.Println("no discord token provided")
 		exitCode = 1
 		return
@@ -88,22 +77,16 @@ func main() {
 
 	log.Println("starting discord bot")
 
-	s := state.New("Bot " + *discordToken)
-	roleIDStrings := []string{}
-	if *adminRoles != "" {
-		roleIDStrings = strings.Split(*adminRoles, ",")
-	}
-	handler := newHandler(s, q, withUserLimit(*userLimit), withAdminRoles(roleIDStrings))
+	s := state.New("Bot " + cfg.Discord.Token)
+	handler := newHandler(
+		s, q,
+		withUserLimit(cfg.UserLimit),
+		withAdminRoles(cfg.Discord.AdminRoles),
+		withPlaybackTime(cfg.PlaybackTime),
+	)
 
 	s.AddInteractionHandler(handler)
 	s.AddIntents(gateway.IntentGuilds | gateway.IntentGuildMembers | gateway.IntentGuildMessages)
-
-	guildSnowflake, err := discord.ParseSnowflake(*guildID)
-	if err != nil {
-		log.Println("cannot parse guild id:", err)
-		exitCode = 1
-		return
-	}
 
 	application, err := s.CurrentApplication()
 	if err != nil {
@@ -112,7 +95,7 @@ func main() {
 		return
 	}
 
-	if _, err := s.BulkOverwriteGuildCommands(application.ID, discord.GuildID(guildSnowflake), commands); err != nil {
+	if _, err := s.BulkOverwriteGuildCommands(application.ID, discord.GuildID(cfg.Discord.Guild), commands); err != nil {
 		log.Println("cannot update commands:", err)
 		exitCode = 1
 		return
@@ -122,7 +105,7 @@ func main() {
 	// 	log.Fatalln("cannot update commands:", err)
 	// }
 
-	go loopPlayMPV(ctx, q, handler, mpvClient)
+	go loopPlayMPV(ctx, q, handler, mpvClient, cfg)
 
 	log.Println("connecting to discord, press Ctrl+C to exit")
 	if err := s.Connect(ctx); err != nil {

@@ -22,19 +22,13 @@ func showOSD(mpvClient *mpv.Client, text string) error {
 	return err
 }
 
-func loopPlayMPV(ctx context.Context, q *queue.Queue, h *queueCommandHandler, mpvClient *mpv.Client) {
-	guildSnowflake, err := discord.ParseSnowflake(*guildID)
-	if err != nil {
-		log.Fatalln("cannot parse guild id:", err)
-	}
-
-	channelSnowflake, err := discord.ParseSnowflake(*channelID)
-	if err != nil {
-		log.Fatalln("cannot parse channel id:", err)
+func loopPlayMPV(ctx context.Context, q *queue.Queue, h *queueCommandHandler, mpvClient *mpv.Client, cfg config) {
+	if cfg.StartImmediately {
+		dequeueEnabled.Store(true)
 	}
 
 	// Set osd-duration
-	if err = mpvClient.SetProperty("osd-duration", 1100); err != nil {
+	if err := mpvClient.SetProperty("osd-duration", 1100); err != nil {
 		log.Fatalln("cannot set OSD duration:", err)
 	}
 
@@ -83,7 +77,7 @@ func loopPlayMPV(ctx context.Context, q *queue.Queue, h *queueCommandHandler, mp
 		if err != nil {
 			log.Println("cannot parse user id:", err)
 		} else {
-			member, err := h.s.Member(discord.GuildID(guildSnowflake), discord.UserID(userSnowflake))
+			member, err := h.s.Member(discord.GuildID(cfg.Discord.Guild), discord.UserID(userSnowflake))
 			if err != nil {
 				log.Println("cannot get username:", err)
 			} else {
@@ -137,12 +131,12 @@ func loopPlayMPV(ctx context.Context, q *queue.Queue, h *queueCommandHandler, mp
 		}
 
 		messageContent := ""
-		if !*disablePing {
+		if !cfg.DisablePing {
 			messageContent = fmt.Sprintf("<@%s>", song.UserID)
 		}
-		_, err = h.s.SendMessage(discord.ChannelID(channelSnowflake), messageContent, discord.Embed{
+		_, err = h.s.SendMessage(discord.ChannelID(cfg.Discord.Channel), messageContent, discord.Embed{
 			Title:       song.Title,
-			Description: fmt.Sprintf("Your song is up next! The song will start in %s unless started manually.", playbackTime),
+			Description: fmt.Sprintf("Your song is up next! The song will start in %s unless started manually.", cfg.PlaybackTime),
 		})
 
 		if err != nil {
@@ -163,7 +157,7 @@ func loopPlayMPV(ctx context.Context, q *queue.Queue, h *queueCommandHandler, mp
 
 		unpausedCh := make(chan struct{})
 		unpauseCheckCtx, cancelUnpauseCheck := context.WithCancel(ctx)
-		timeLeft := *playbackTime
+		timeLeft := cfg.PlaybackTime
 		go func() {
 			for {
 				select {
@@ -188,7 +182,7 @@ func loopPlayMPV(ctx context.Context, q *queue.Queue, h *queueCommandHandler, mp
 
 		select {
 		case <-unpausedCh:
-		case <-time.After(*playbackTime):
+		case <-time.After(cfg.PlaybackTime):
 			if err = mpvClient.Play(); err != nil {
 				cancelUnpauseCheck()
 				log.Println("cannot set pause:", err)

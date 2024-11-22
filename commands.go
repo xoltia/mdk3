@@ -90,11 +90,12 @@ var commands = []api.CreateCommandData{
 
 type queueCommandHandler struct {
 	*cmdroute.Router
-	s          *state.State
-	q          *queue.Queue
-	pageSize   int
-	userLimit  int
-	adminRoles []discord.RoleID
+	s            *state.State
+	q            *queue.Queue
+	pageSize     int
+	userLimit    int
+	adminRoles   []discord.RoleID
+	playbackTime time.Duration
 }
 
 type queueCommandHandlerOption func(*queueCommandHandler)
@@ -105,15 +106,17 @@ func withUserLimit(limit int) queueCommandHandlerOption {
 	}
 }
 
-func withAdminRoles(roles []string) queueCommandHandlerOption {
+func withAdminRoles(roles []discord.Snowflake) queueCommandHandlerOption {
 	return func(h *queueCommandHandler) {
 		for _, role := range roles {
-			roleID, err := discord.ParseSnowflake(role)
-			if err != nil {
-				panic(err)
-			}
-			h.adminRoles = append(h.adminRoles, discord.RoleID(roleID))
+			h.adminRoles = append(h.adminRoles, discord.RoleID(role))
 		}
+	}
+}
+
+func withPlaybackTime(d time.Duration) queueCommandHandlerOption {
+	return func(h *queueCommandHandler) {
+		h.playbackTime = d
 	}
 }
 
@@ -270,7 +273,7 @@ func (h *queueCommandHandler) cmdEnqueue(ctx context.Context, data cmdroute.Comm
 
 	playTimeString := "Next"
 	if queuePosition > 1 {
-		queueDuration += (*playbackTime) * time.Duration(queuePosition-1)
+		queueDuration += (h.playbackTime) * time.Duration(queuePosition-1)
 		playTime := time.Now().Add(queueDuration)
 		playTimeString = fmt.Sprintf("<t:%d:t>", playTime.Unix())
 	}
