@@ -33,7 +33,7 @@ func main() {
 			fmt.Println("An error occurred while parsing the config.")
 			fmt.Println(v.ErrorWithUsage())
 		case validationErrors:
-			fmt.Println("One ore more errors occurred while validating the config.")
+			fmt.Println("One or more errors occurred while validating the config.")
 			fmt.Println("Please fix the following errors and try again:")
 			for _, e := range v {
 				fmt.Printf(" %s\n", e)
