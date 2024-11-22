@@ -5,3 +5,5 @@ mdk3
 *.bat
 queuedata
 dist
+.vscode
+
