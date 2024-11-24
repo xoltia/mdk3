@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"image"
@@ -41,12 +42,16 @@ var (
 	loadingPath = filepath.Join(os.TempDir(), "mdk3-loading.png")
 )
 
-func downloadThumbnail(url string) (image.Image, error) {
-	resp, err := http.Get(url)
+func downloadThumbnail(ctx context.Context, url string) (image.Image, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
 	}
 
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
 	defer resp.Body.Close()
 
 	var img image.Image

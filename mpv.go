@@ -33,6 +33,10 @@ func loopPlayMPV(ctx context.Context, q *queue.Queue, h *queueCommandHandler, mp
 	}
 
 	for {
+		if ctx.Err() != nil {
+			return
+		}
+
 		if !dequeueEnabled.Load() {
 			showOSD(ctx, mpvClient, "Waiting for /start")
 			select {
@@ -89,7 +93,7 @@ func loopPlayMPV(ctx context.Context, q *queue.Queue, h *queueCommandHandler, mp
 		}
 
 		var thumbnail image.Image
-		actualThumbnail, err := downloadThumbnail(song.ThumbnailURL)
+		actualThumbnail, err := downloadThumbnail(ctx, song.ThumbnailURL)
 		if err != nil {
 			thumbnail = image.Black
 			log.Println("cannot download thumbnail:", err)
