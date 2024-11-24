@@ -18,7 +18,10 @@ import (
 	"github.com/xoltia/mpv"
 )
 
-var configFile = flag.String("config", "config.toml", "config file")
+var (
+	configFile    = flag.String("config", "config.toml", "config file")
+	skipOverwrite = flag.Bool("skip-overwrite", false, "skip overwriting commands")
+)
 
 func main() {
 	var exitCode int
@@ -100,22 +103,19 @@ func main() {
 	s.AddInteractionHandler(handler)
 	s.AddIntents(gateway.IntentGuilds | gateway.IntentGuildMembers | gateway.IntentGuildMessages)
 
-	application, err := s.CurrentApplication()
-	if err != nil {
-		log.Println("cannot get application:", err)
-		exitCode = 1
-		return
+	if *skipOverwrite {
+		application, err := s.CurrentApplication()
+		if err != nil {
+			log.Println("cannot get application:", err)
+			exitCode = 1
+			return
+		}
+		if _, err := s.BulkOverwriteGuildCommands(application.ID, discord.GuildID(cfg.Discord.Guild), commands); err != nil {
+			log.Println("cannot update commands:", err)
+			exitCode = 1
+			return
+		}
 	}
-
-	if _, err := s.BulkOverwriteGuildCommands(application.ID, discord.GuildID(cfg.Discord.Guild), commands); err != nil {
-		log.Println("cannot update commands:", err)
-		exitCode = 1
-		return
-	}
-
-	// if err := cmdroute.OverwriteCommands(s, commands); err != nil {
-	// 	log.Fatalln("cannot update commands:", err)
-	// }
 
 	go loopPlayMPV(ctx, q, handler, mpvClient, cfg)
 

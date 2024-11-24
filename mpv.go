@@ -81,7 +81,10 @@ func loopPlayMPV(ctx context.Context, q *queue.Queue, h *queueCommandHandler, mp
 			if err != nil {
 				log.Println("cannot get username:", err)
 			} else {
-				username = member.User.Username
+				username = member.Nick
+				if username == "" {
+					username = member.User.DisplayOrUsername()
+				}
 			}
 		}
 

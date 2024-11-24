@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"image"
+	"image/draw"
+	"image/png"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -11,7 +13,6 @@ import (
 	_ "embed"
 	_ "image/gif"
 	_ "image/jpeg"
-	_ "image/png"
 
 	_ "golang.org/x/image/webp"
 
@@ -19,6 +20,7 @@ import (
 	"github.com/golang/freetype"
 	"github.com/golang/freetype/truetype"
 	"github.com/xoltia/mdk3/queue"
+	"github.com/xoltia/mdk3/twemoji"
 	xdraw "golang.org/x/image/draw"
 )
 
@@ -79,35 +81,63 @@ func writePreviewPoster(
 	smallThumbnail := image.NewRGBA(image.Rect(0, 0, 1024, 576))
 	xdraw.ApproxBiLinear.Scale(smallThumbnail, smallThumbnail.Bounds(), thumbnail, thumbnail.Bounds(), xdraw.Over, nil)
 
+	img := image.NewRGBA(image.Rect(0, 0, 1920, 1080))
+	draw.Draw(img, img.Bounds(), image.White, image.Point{}, draw.Src)
+	draw.Draw(img, img.Bounds().Add(image.Point{100, 100}), smallThumbnail, image.Point{}, draw.Over)
+
 	face := truetype.NewFace(notoSansFont, &truetype.Options{
 		Size: 48,
 		DPI:  72,
 	})
 
-	dc := gg.NewContext(1920, 1080)
-	dc.SetRGB(1, 1, 1)
-	dc.Clear()
-	dc.DrawImage(smallThumbnail, 100, 100)
-	dc.SetFontFace(face)
-	dc.SetRGB(0, 0, 0)
+	y := twemoji.DrawText(img, twemoji.DrawTextOptions{
+		Text:         song.Title,
+		MaxWidth:     1720,
+		X:            100,
+		Y:            800,
+		Face:         face,
+		OverflowMode: twemoji.OverflowModeWrap,
+		MaxLines:     3,
+	})
 
-	bottom := drawWrappedString(dc, song.Title, 100, 800, 1720, 48)
 	face = truetype.NewFace(notoSansFont, &truetype.Options{
 		Size: 36,
 		DPI:  72,
 	})
 
-	dc.SetFontFace(face)
-	drawTruncatedString(dc, username, 100, bottom+48, 1720)
+	twemoji.DrawText(img, twemoji.DrawTextOptions{
+		Text:         username,
+		MaxWidth:     1720,
+		X:            100,
+		Y:            800 + y + 48,
+		Face:         face,
+		OverflowMode: twemoji.OverflowModeClip,
+	})
 
-	drawTruncatedString(dc, "Up next:", 1175, 150, 675)
+	twemoji.DrawText(img, twemoji.DrawTextOptions{
+		Text:         "Up next:",
+		MaxWidth:     675,
+		X:            1175,
+		Y:            150,
+		Face:         face,
+		OverflowMode: twemoji.OverflowModeClip,
+	})
+
 	for i := 0; i < len(nextSongs) && i < 10; i++ {
-		drawTruncatedString(dc, fmt.Sprintf("%d. %s", i+1, nextSongs[i].Title), 1175, 200+float64(i)*48, 675)
+		twemoji.DrawText(img, twemoji.DrawTextOptions{
+			Text:         fmt.Sprintf("%d. %s", i+1, nextSongs[i].Title),
+			MaxWidth:     675,
+			X:            1175,
+			Y:            200 + i*48,
+			Face:         face,
+			OverflowMode: twemoji.OverflowModeClip,
+		})
 	}
 
-	return previewPath, dc.SavePNG(previewPath)
+	return previewPath, savePNG(previewPath, img)
 }
 
+// TODO: remove gg dependency
 func writeLoadingPoster(thumbnail image.Image) (string, error) {
 	poster, err := os.Create(loadingPath)
 	if err != nil {
@@ -136,49 +166,11 @@ func writeLoadingPoster(thumbnail image.Image) (string, error) {
 	return loadingPath, dc.SavePNG(loadingPath)
 }
 
-func drawWrappedString(dc *gg.Context, text string, x, y, maxWidth, fontSize float64) (bottom float64) {
-	runes := []rune(text)
-	lines := []string{}
-	for len(runes) > 0 {
-		pos := 0
-		for i := 0; i < len(runes); i++ {
-			w, _ := dc.MeasureString(string(runes[:i+1]))
-			if w > maxWidth {
-				break
-			}
-
-			pos = i
-		}
-
-		lines = append(lines, string(runes[:pos+1]))
-		runes = runes[pos+1:]
+func savePNG(path string, img image.Image) error {
+	file, err := os.Create(path)
+	if err != nil {
+		return err
 	}
-
-	for i, line := range lines {
-		dc.DrawString(line, x, y+float64(i)*fontSize+float64(i)*8)
-	}
-
-	return y + float64(len(lines))*(fontSize+8)
-}
-
-func drawTruncatedString(dc *gg.Context, text string, x, y, maxWidth float64) {
-	runes := []rune(text)
-	originalLength := len(runes)
-	w, _ := dc.MeasureString(text)
-	for w > maxWidth {
-		runes = runes[:len(runes)-1]
-		w, _ = dc.MeasureString(string(runes))
-	}
-
-	if len(runes) < originalLength {
-		elipsisWidth, _ := dc.MeasureString("…")
-		for w+elipsisWidth > maxWidth {
-			runes = runes[:len(runes)-1]
-			w, _ = dc.MeasureString(string(runes))
-		}
-
-		runes = append(runes, '…')
-	}
-
-	dc.DrawString(string(runes), x, y)
+	defer file.Close()
+	return png.Encode(file, img)
 }
