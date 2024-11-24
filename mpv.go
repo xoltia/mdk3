@@ -17,8 +17,8 @@ var (
 	dequeueEnabled = atomic.Bool{}
 )
 
-func showOSD(mpvClient *mpv.Client, text string) error {
-	_, err := mpvClient.Command("show-text", text)
+func showOSD(ctx context.Context, mpvClient *mpv.Client, text string) error {
+	_, err := mpvClient.Command(ctx, "show-text", text)
 	return err
 }
 
@@ -28,13 +28,13 @@ func loopPlayMPV(ctx context.Context, q *queue.Queue, h *queueCommandHandler, mp
 	}
 
 	// Set osd-duration
-	if err := mpvClient.SetProperty("osd-duration", 1100); err != nil {
+	if err := mpvClient.SetProperty(ctx, "osd-duration", 1100); err != nil {
 		log.Fatalln("cannot set OSD duration:", err)
 	}
 
 	for {
 		if !dequeueEnabled.Load() {
-			showOSD(mpvClient, "Waiting for /start")
+			showOSD(ctx, mpvClient, "Waiting for /start")
 			select {
 			case <-ctx.Done():
 				return
@@ -102,14 +102,14 @@ func loopPlayMPV(ctx context.Context, q *queue.Queue, h *queueCommandHandler, mp
 		if err != nil {
 			log.Println("cannot write preview poster:", err)
 		} else {
-			if err = mpvClient.LoadFile(previewLocation, mpv.LoadFileModeReplace); err != nil {
+			if err = mpvClient.LoadFile(ctx, previewLocation, mpv.LoadFileModeReplace); err != nil {
 				log.Println("cannot load preview poster:", err)
 				continue
 			}
 			hasPoster = true
 		}
 
-		if err = mpvClient.Pause(); err != nil {
+		if err = mpvClient.Pause(ctx); err != nil {
 			log.Println("cannot set pause:", err)
 			continue
 		}
@@ -118,7 +118,7 @@ func loopPlayMPV(ctx context.Context, q *queue.Queue, h *queueCommandHandler, mp
 		if err != nil {
 			log.Println("cannot write loading poster:", err)
 		} else {
-			if err = mpvClient.LoadFile(loadingLocation, mpv.LoadFileModeAppend); err != nil {
+			if err = mpvClient.LoadFile(ctx, loadingLocation, mpv.LoadFileModeAppend); err != nil {
 				log.Println("cannot load loading poster:", err)
 				continue
 			}
@@ -128,7 +128,7 @@ func loopPlayMPV(ctx context.Context, q *queue.Queue, h *queueCommandHandler, mp
 		if !hasPoster {
 			mode = mpv.LoadFileModeReplace
 		}
-		if err = mpvClient.LoadFile(song.SongURL, mode); err != nil {
+		if err = mpvClient.LoadFile(ctx, song.SongURL, mode); err != nil {
 			log.Println("cannot load file:", err)
 			continue
 		}
@@ -148,12 +148,12 @@ func loopPlayMPV(ctx context.Context, q *queue.Queue, h *queueCommandHandler, mp
 
 		// Change OSD font size
 		restoreFontSize := true
-		oldSize, err := mpvClient.GetPropertyFloat("osd-font-size")
+		oldSize, err := mpvClient.GetPropertyFloat(ctx, "osd-font-size")
 		if err != nil {
 			log.Println("cannot get OSD font size:", err)
 			restoreFontSize = false
 		} else {
-			if err = mpvClient.SetProperty("osd-font-size", 30); err != nil {
+			if err = mpvClient.SetProperty(ctx, "osd-font-size", 30); err != nil {
 				log.Println("cannot set OSD font size:", err)
 			}
 		}
@@ -166,7 +166,7 @@ func loopPlayMPV(ctx context.Context, q *queue.Queue, h *queueCommandHandler, mp
 				select {
 				case <-time.After(time.Second):
 					timeLeft -= time.Second
-					paused, err := mpvClient.GetPropertyBool("pause")
+					paused, err := mpvClient.GetPropertyBool(ctx, "pause")
 					if err != nil {
 						log.Println("cannot get pause state:", err)
 						continue
@@ -175,7 +175,7 @@ func loopPlayMPV(ctx context.Context, q *queue.Queue, h *queueCommandHandler, mp
 						close(unpausedCh)
 						return
 					} else {
-						showOSD(mpvClient, fmt.Sprintf("Starting in %s", timeLeft))
+						showOSD(ctx, mpvClient, fmt.Sprintf("Starting in %s", timeLeft))
 					}
 				case <-unpauseCheckCtx.Done():
 					return
@@ -186,7 +186,7 @@ func loopPlayMPV(ctx context.Context, q *queue.Queue, h *queueCommandHandler, mp
 		select {
 		case <-unpausedCh:
 		case <-time.After(cfg.PlaybackTime):
-			if err = mpvClient.Play(); err != nil {
+			if err = mpvClient.Play(ctx); err != nil {
 				cancelUnpauseCheck()
 				log.Println("cannot set pause:", err)
 				continue
@@ -196,13 +196,13 @@ func loopPlayMPV(ctx context.Context, q *queue.Queue, h *queueCommandHandler, mp
 		cancelUnpauseCheck()
 
 		if restoreFontSize {
-			if err = mpvClient.SetProperty("osd-font-size", oldSize); err != nil {
+			if err = mpvClient.SetProperty(ctx, "osd-font-size", oldSize); err != nil {
 				log.Println("cannot restore OSD font size:", err)
 			}
 		}
 
 		continueCh := make(chan struct{})
-		unobserve, err := mpvClient.ObserveProperty("idle-active", func(value any) {
+		unobserve, err := mpvClient.ObserveProperty(ctx, "idle-active", func(value any) {
 			if value.(bool) {
 				close(continueCh)
 			}

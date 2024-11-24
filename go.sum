@@ -103,6 +103,8 @@ github.com/wader/osleaktest v0.0.0-20191111175233-f643b0fed071 h1:QkrG4Zr5OVFuC9
 github.com/wader/osleaktest v0.0.0-20191111175233-f643b0fed071/go.mod h1:XD6emOFPHVzb0+qQpiNOdPL2XZ0SRUM0N5JHuq6OmXo=
 github.com/xoltia/mpv v0.0.0-20241119170524-0c154b4e444e h1:lsbe0t6OWmX2J/SY3OXz59JUr1I1cUy35t+otNoPAms=
 github.com/xoltia/mpv v0.0.0-20241119170524-0c154b4e444e/go.mod h1:via4CTytFud1d70V6aUjUw7yTijAoLIrbMar7ZhH0XE=
+github.com/xoltia/mpv v0.0.0-20241124165859-e298b9666056 h1:Ufd0pCHAjZhtTyrlPEyaDHXfJvrZRds47fDMgcDRlAY=
+github.com/xoltia/mpv v0.0.0-20241124165859-e298b9666056/go.mod h1:via4CTytFud1d70V6aUjUw7yTijAoLIrbMar7ZhH0XE=
 github.com/yuin/goldmark v1.1.27/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=
 github.com/yuin/goldmark v1.2.1/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=
 go.opencensus.io v0.24.0 h1:y73uSU6J157QMP2kn2r30vwW1A2W2WFwSCGnAVxeaD0=
