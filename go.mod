@@ -4,14 +4,14 @@ go 1.23.2
 
 require (
 	github.com/BurntSushi/toml v1.4.0
-	github.com/dgraph-io/badger/v4 v4.4.0
+	github.com/dgraph-io/badger/v4 v4.5.0
 	github.com/diamondburned/arikawa/v3 v3.4.0
 	github.com/fogleman/gg v1.3.0
 	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0
 	github.com/kkdai/youtube/v2 v2.10.1
-	github.com/wader/goutubedl v0.0.0-20241107164926-f902ca5cee5b
-	github.com/xoltia/mpv v0.0.0-20241124165859-e298b9666056
-	golang.org/x/image v0.22.0
+	github.com/wader/goutubedl v0.0.0-20241204165758-63dcb4b7f53f
+	github.com/xoltia/mpv v0.0.0-20241206173729-4b56e03bddad
+	golang.org/x/image v0.23.0
 )
 
 require (
@@ -23,19 +23,19 @@ require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/go-sourcemap/sourcemap v2.1.4+incompatible // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
-	github.com/golang/groupcache v0.0.0-20200121045136-8c9f03a8e57e // indirect
+	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/flatbuffers v24.3.25+incompatible // indirect
-	github.com/google/pprof v0.0.0-20241101162523-b92577c0c142 // indirect
+	github.com/google/pprof v0.0.0-20241206021119-61a79c692802 // indirect
 	github.com/gorilla/schema v1.4.1 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/klauspost/compress v1.17.11 // indirect
 	github.com/natefinch/npipe v0.0.0-20160621034901-c1b8fa8bdcce // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	go.opencensus.io v0.24.0 // indirect
-	golang.org/x/net v0.30.0 // indirect
-	golang.org/x/sys v0.26.0 // indirect
-	golang.org/x/text v0.20.0 // indirect
+	golang.org/x/net v0.32.0 // indirect
+	golang.org/x/sys v0.28.0 // indirect
+	golang.org/x/text v0.21.0 // indirect
 	golang.org/x/time v0.8.0 // indirect
-	google.golang.org/protobuf v1.33.0 // indirect
+	google.golang.org/protobuf v1.35.2 // indirect
 )

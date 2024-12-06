@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/BurntSushi/toml"
 	"github.com/diamondburned/arikawa/v3/discord"
@@ -56,8 +57,10 @@ func main() {
 	defer cancel()
 
 	mpvProcess := mpv.NewProcessWithOptions(mpv.ProcessOptions{
-		Path: cfg.Binary.MPVPath,
-		Args: []string{"--force-window"},
+		Path:           cfg.Binary.MPVPath,
+		Args:           []string{"--force-window"},
+		ConnMaxRetries: 10,
+		ConnRetryDelay: time.Second * 1,
 	})
 	defer mpvProcess.Close()
 
@@ -103,7 +106,7 @@ func main() {
 	s.AddInteractionHandler(handler)
 	s.AddIntents(gateway.IntentGuilds | gateway.IntentGuildMembers | gateway.IntentGuildMessages)
 
-	if *skipOverwrite {
+	if !*skipOverwrite {
 		application, err := s.CurrentApplication()
 		if err != nil {
 			log.Println("cannot get application:", err)
