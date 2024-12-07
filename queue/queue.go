@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	version uint32 = 0
+	version uint32 = 1
 )
 
 var (

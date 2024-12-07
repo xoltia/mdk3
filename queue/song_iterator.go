@@ -1,9 +1,7 @@
 package queue
 
 import (
-	"bytes"
 	"encoding/binary"
-	"encoding/gob"
 
 	badger "github.com/dgraph-io/badger/v4"
 )
@@ -24,9 +22,7 @@ func (si *songIterator) seekID(id int) {
 
 func (si *songIterator) song() (song QueuedSong, err error) {
 	item := si.Item()
-	err = item.Value(func(val []byte) error {
-		return gob.NewDecoder(bytes.NewReader(val)).Decode(&song)
-	})
+	err = item.Value(song.UnmarshalBinary)
 	return
 }
 

@@ -3,7 +3,6 @@ package queue
 import (
 	"bytes"
 	"encoding/binary"
-	"encoding/gob"
 	"errors"
 	"fmt"
 	"strconv"
@@ -114,7 +113,7 @@ func (qtx *QueueTx) Remove(id int) (err error) {
 		s.DequeuedCount--
 		s.DeletedCount++
 	}
-	if song.DequeuedAt.IsZero() {
+	if !song.IsDequeued() {
 		err = qtx.clearSlugIndex(song.Slug)
 		if err != nil {
 			return
@@ -279,17 +278,7 @@ func (qtx *QueueTx) GetBySlug(slug string) (song QueuedSong, err error) {
 func (qtx *QueueTx) GetByID(id int) (song QueuedSong, err error) {
 	key := [9]byte{byte(recordTypeQueuedSong)}
 	binary.BigEndian.PutUint64(key[1:], uint64(id))
-	item, err := qtx.txn.Get(key[:])
-	if err != nil {
-		if errors.Is(err, badger.ErrKeyNotFound) {
-			err = ErrSongNotFound
-		}
-		return
-	}
-
-	err = item.Value(func(val []byte) error {
-		return gob.NewDecoder(bytes.NewReader(val)).Decode(&song)
-	})
+	err = qtx.getUnmarshaledValue(key[:], &song)
 	return
 }
 
@@ -517,15 +506,7 @@ func (qtx *QueueTx) headSong() (headSong QueuedSong, err error) {
 
 	key := [9]byte{byte(recordTypeQueuedSong)}
 	binary.BigEndian.PutUint64(key[1:], uint64(head))
-	item, err := qtx.txn.Get(key[:])
-	if err != nil {
-		return
-	}
-
-	err = item.Value(func(val []byte) error {
-		return gob.NewDecoder(bytes.NewReader(val)).Decode(&headSong)
-	})
-
+	err = qtx.getUnmarshaledValue(key[:], &headSong)
 	return
 }
 
@@ -545,15 +526,9 @@ func (qtx *QueueTx) updateHead(head int) error {
 
 // set writes a song to the database with a given ID.
 func (qtx *QueueTx) set(id int, song QueuedSong) error {
-	buff := new(bytes.Buffer)
-	err := gob.NewEncoder(buff).Encode(song)
-	if err != nil {
-		return fmt.Errorf("cannot encode queued song: %w", err)
-	}
-
 	key := [9]byte{byte(recordTypeQueuedSong)}
 	binary.BigEndian.PutUint64(key[1:], uint64(id))
-	return qtx.txn.Set(key[:], buff.Bytes())
+	return qtx.setMarshaledValue(key[:], &song)
 }
 
 func (qtx *QueueTx) songIterator() *songIterator {

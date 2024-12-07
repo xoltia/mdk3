@@ -1,8 +1,11 @@
 package queue
 
-import "time"
+import (
+	"time"
+)
 
 type NewSong struct {
+	// TODO: this can be a uint64
 	UserID       string
 	Title        string
 	SongURL      string
@@ -16,4 +19,8 @@ type QueuedSong struct {
 	Slug       string
 	QueuedAt   time.Time
 	DequeuedAt time.Time
+}
+
+func (qs *QueuedSong) IsDequeued() bool {
+	return !qs.DequeuedAt.IsZero()
 }
