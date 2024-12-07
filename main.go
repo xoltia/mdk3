@@ -74,6 +74,7 @@ func main() {
 
 	go func() {
 		mpvProcess.Wait()
+		log.Println("mpv process exited")
 		cancel()
 	}()
 
