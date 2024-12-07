@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -81,6 +82,9 @@ func main() {
 	q, err := queue.OpenQueue(cfg.QueuePath)
 	if err != nil {
 		log.Println("cannot open queue:", err)
+		if errors.Is(err, queue.ErrVersionMismatch) {
+			log.Println("the queue version is incompatible, please change the queue path or delete the existing queue")
+		}
 		exitCode = 1
 		return
 	}
