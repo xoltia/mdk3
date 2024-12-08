@@ -15,7 +15,6 @@ import (
 	"github.com/diamondburned/arikawa/v3/discord"
 	"github.com/diamondburned/arikawa/v3/gateway"
 	"github.com/diamondburned/arikawa/v3/state"
-	"github.com/wader/goutubedl"
 	"github.com/xoltia/mdk3/queue"
 	"github.com/xoltia/mpv"
 )
@@ -52,7 +51,8 @@ func main() {
 
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	flag.Parse()
-	goutubedl.Path = cfg.Binary.YTDLPath
+	// goutubedl.Path = cfg.Binary.YTDLPath
+	ytdlpPath = cfg.Binary.YTDLPath
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()

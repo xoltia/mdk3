@@ -1,17 +1,22 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/url"
+	"os/exec"
 	"slices"
 	"strings"
 	"time"
 
 	"github.com/kkdai/youtube/v2"
-	"github.com/wader/goutubedl"
 )
+
+var errAgeRestricted = errors.New("video is age restricted")
 
 type VideoInfo struct {
 	URL       string        `json:"url"`
@@ -23,21 +28,39 @@ type VideoInfo struct {
 }
 
 var ytClient = youtube.Client{}
+var ytdlpPath = "yt-dlp"
 
 func init() {
 	youtube.DefaultClient = youtube.WebClient
 }
 
 func getGenericVideoInfo(ctx context.Context, videoURL *url.URL) (v *VideoInfo, err error) {
-	result, err := goutubedl.New(ctx, videoURL.String(), goutubedl.Options{
-		Type: goutubedl.TypeSingle,
-	})
+	cmd := exec.CommandContext(ctx, ytdlpPath, "--dump-single-json", videoURL.String())
+	out, err := cmd.Output()
 
 	if err != nil {
+		var exitError *exec.ExitError
+		if errors.As(err, &exitError) {
+			if bytes.Contains(exitError.Stderr, []byte("Sign in to confirm your age")) {
+				err = errAgeRestricted
+			}
+		}
 		return
 	}
 
-	info := result.Info
+	var info struct {
+		WebpageURL string `json:"webpage_url"`
+		Extractor  string `json:"extractor_key"`
+		ID         string `json:"id"`
+		Title      string `json:"title"`
+		Duration   int    `json:"duration"`
+		Thumbnail  string `json:"thumbnail"`
+	}
+
+	err = json.Unmarshal(out, &info)
+	if err != nil {
+		return
+	}
 
 	v = &VideoInfo{
 		URL:       info.WebpageURL,
@@ -47,7 +70,6 @@ func getGenericVideoInfo(ctx context.Context, videoURL *url.URL) (v *VideoInfo, 
 		Duration:  time.Duration(info.Duration) * time.Second,
 		Thumbnail: info.Thumbnail,
 	}
-
 	return
 }
 

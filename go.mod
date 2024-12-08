@@ -8,7 +8,6 @@ require (
 	github.com/diamondburned/arikawa/v3 v3.4.0
 	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0
 	github.com/kkdai/youtube/v2 v2.10.1
-	github.com/wader/goutubedl v0.0.0-20241204165758-63dcb4b7f53f
 	github.com/xoltia/mpv v0.0.0-20241206173729-4b56e03bddad
 	golang.org/x/image v0.23.0
 )
