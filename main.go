@@ -5,7 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -49,7 +49,7 @@ func main() {
 		return
 	}
 
-	log.SetFlags(log.LstdFlags | log.Lshortfile)
+	slog.SetLogLoggerLevel(slog.LevelDebug)
 	flag.Parse()
 	// goutubedl.Path = cfg.Binary.YTDLPath
 	ytdlpPath = cfg.Binary.YTDLPath
@@ -67,24 +67,24 @@ func main() {
 
 	mpvClient, err := mpvProcess.OpenClient()
 	if err != nil {
-		log.Println("cannot open mpv client:", err)
+		slog.ErrorContext(ctx, "Unable to open mpv client", slog.String("err", err.Error()))
 		exitCode = 1
 		return
 	}
 
 	go func() {
 		mpvProcess.Wait()
-		log.Println("mpv process exited")
+		slog.ErrorContext(ctx, "MPV process exited")
 		cancel()
 	}()
 
-	log.Println("connected to mpv")
+	slog.InfoContext(ctx, "Connected to MPV")
 
 	q, err := queue.OpenQueue(cfg.QueuePath)
 	if err != nil {
-		log.Println("cannot open queue:", err)
+		slog.ErrorContext(ctx, "Error opening queue database", slog.String("err", err.Error()))
 		if errors.Is(err, queue.ErrVersionMismatch) {
-			log.Println("the queue version is incompatible, please change the queue path or delete the existing queue")
+			slog.ErrorContext(ctx, "The current queue data was created with an incompatible version, move/delete it or set a different location in the configuration file")
 		}
 		exitCode = 1
 		return
@@ -94,11 +94,11 @@ func main() {
 	go func() {
 		err = q.GC()
 		if err != nil {
-			log.Println("cannot gc queue:", err)
+			slog.WarnContext(ctx, "Error calling GC on queue database", slog.String("err", err.Error()))
 		}
 	}()
 
-	log.Println("starting discord bot")
+	slog.InfoContext(ctx, "Initializing Discord application")
 
 	s := state.New("Bot " + cfg.Discord.Token)
 	handler := newHandler(
@@ -114,12 +114,12 @@ func main() {
 	if !*skipOverwrite {
 		application, err := s.CurrentApplication()
 		if err != nil {
-			log.Println("cannot get application:", err)
+			slog.ErrorContext(ctx, "Unable to get application information", slog.String("err", err.Error()))
 			exitCode = 1
 			return
 		}
 		if _, err := s.BulkOverwriteGuildCommands(application.ID, discord.GuildID(cfg.Discord.Guild), commands); err != nil {
-			log.Println("cannot update commands:", err)
+			slog.ErrorContext(ctx, "Unable to overwrite application commands", slog.String("err", err.Error()))
 			exitCode = 1
 			return
 		}
@@ -127,9 +127,9 @@ func main() {
 
 	go loopPlayMPV(ctx, q, handler, mpvClient, cfg)
 
-	log.Println("connecting to discord, press Ctrl+C to exit")
+	slog.InfoContext(ctx, "Connecting Discord application")
 	if err := s.Connect(ctx); err != nil {
-		log.Println("cannot connect:", err)
+		slog.ErrorContext(ctx, "Error connecting", slog.String("err", err.Error()))
 		exitCode = 1
 	}
 }

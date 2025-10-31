@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/url"
 	"os/exec"
 	"slices"
@@ -137,7 +137,7 @@ func getVideoInfo(ctx context.Context, videoURL *url.URL) (v *VideoInfo, err err
 	if isYouTubeLink {
 		v, err = getInfoFromYouTubeBuiltin(ctx, videoURL)
 		if err != nil {
-			log.Println("failed to get video info from youtube builtin:", err)
+			slog.WarnContext(ctx, "Failed to get video info from youtube builtin", slog.String("err", err.Error()))
 			v, err = getGenericVideoInfo(ctx, videoURL)
 		}
 		return

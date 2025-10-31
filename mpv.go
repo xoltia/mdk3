@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"image"
-	"log"
+	"log/slog"
 	"sync/atomic"
 	"time"
 
@@ -24,12 +24,13 @@ func showOSD(ctx context.Context, mpvClient *mpv.Client, text string) error {
 
 func loopPlayMPV(ctx context.Context, q *queue.Queue, h *queueCommandHandler, mpvClient *mpv.Client, cfg config) {
 	if cfg.StartImmediately {
+		slog.DebugContext(ctx, "Start immediately flag set")
 		dequeueEnabled.Store(true)
 	}
 
 	// Set osd-duration
 	if err := mpvClient.SetProperty(ctx, "osd-duration", 1100); err != nil {
-		log.Fatalln("cannot set OSD duration:", err)
+		slog.ErrorContext(ctx, "Failed to set OSD duration", slog.String("err", err.Error()))
 	}
 
 	for {
@@ -60,30 +61,30 @@ func loopPlayMPV(ctx context.Context, q *queue.Queue, h *queueCommandHandler, mp
 				}
 			}
 
-			log.Println("cannot dequeue:", err)
+			slog.ErrorContext(ctx, "Error dequeuing", slog.String("err", err.Error()))
 			tx.Discard()
 			break
 		}
 		next, err := tx.List(0, 10)
 		if err != nil {
-			log.Println("cannot list:", err)
+			slog.ErrorContext(ctx, "Error listing queue items", slog.String("err", err.Error()))
 			tx.Discard()
 			break
 		}
 		if err = tx.Commit(); err != nil {
-			log.Println("cannot commit:", err)
+			slog.ErrorContext(ctx, "Error committing transaction", slog.String("err", err.Error()))
 			break
 		}
-		log.Println("playing", song.Title)
+		slog.InfoContext(ctx, "Playing next song", slog.String("member", song.UserID), slog.String("title", song.Title), slog.String("url", song.SongURL))
 
 		var username string
 		userSnowflake, err := discord.ParseSnowflake(song.UserID)
 		if err != nil {
-			log.Println("cannot parse user id:", err)
+			slog.ErrorContext(ctx, "Unable to parse user ID", slog.String("err", err.Error()), slog.String("user_id", song.UserID))
 		} else {
 			member, err := h.s.Member(discord.GuildID(cfg.Discord.Guild), discord.UserID(userSnowflake))
 			if err != nil {
-				log.Println("cannot get username:", err)
+				slog.WarnContext(ctx, "Unable to get username", slog.String("err", err.Error()), slog.String("user_id", song.UserID))
 			} else {
 				username = member.Nick
 				if username == "" {
@@ -96,7 +97,7 @@ func loopPlayMPV(ctx context.Context, q *queue.Queue, h *queueCommandHandler, mp
 		actualThumbnail, err := downloadThumbnail(ctx, song.ThumbnailURL)
 		if err != nil {
 			thumbnail = image.Black
-			log.Println("cannot download thumbnail:", err)
+			slog.WarnContext(ctx, "Unable to download thumbnail", slog.String("err", err.Error()), slog.String("url", song.ThumbnailURL))
 		} else {
 			thumbnail = actualThumbnail
 		}
@@ -104,26 +105,26 @@ func loopPlayMPV(ctx context.Context, q *queue.Queue, h *queueCommandHandler, mp
 		hasPoster := false
 		previewLocation, err := writePreviewPoster(song, username, next, thumbnail)
 		if err != nil {
-			log.Println("cannot write preview poster:", err)
+			slog.ErrorContext(ctx, "Error writing preview poster", slog.String("err", err.Error()))
 		} else {
 			if err = mpvClient.LoadFile(ctx, previewLocation, mpv.LoadFileModeReplace); err != nil {
-				log.Println("cannot load preview poster:", err)
+				slog.ErrorContext(ctx, "Error loading preview poster file to mpv", slog.String("err", err.Error()))
 				continue
 			}
 			hasPoster = true
 		}
 
 		if err = mpvClient.Pause(ctx); err != nil {
-			log.Println("cannot set pause:", err)
+			slog.ErrorContext(ctx, "Error pausing mpv", slog.String("err", err.Error()))
 			continue
 		}
 
 		loadingLocation, err := writeLoadingPoster(thumbnail)
 		if err != nil {
-			log.Println("cannot write loading poster:", err)
+			slog.ErrorContext(ctx, "Error writing loading poster", slog.String("err", err.Error()))
 		} else {
 			if err = mpvClient.LoadFile(ctx, loadingLocation, mpv.LoadFileModeAppend); err != nil {
-				log.Println("cannot load loading poster:", err)
+				slog.ErrorContext(ctx, "Error sending loading poster file to mpv", slog.String("err", err.Error()))
 				continue
 			}
 		}
@@ -133,7 +134,7 @@ func loopPlayMPV(ctx context.Context, q *queue.Queue, h *queueCommandHandler, mp
 			mode = mpv.LoadFileModeReplace
 		}
 		if err = mpvClient.LoadFile(ctx, song.SongURL, mode); err != nil {
-			log.Println("cannot load file:", err)
+			slog.ErrorContext(ctx, "Error loading song URL to mpv", slog.String("err", err.Error()))
 			continue
 		}
 
@@ -147,18 +148,18 @@ func loopPlayMPV(ctx context.Context, q *queue.Queue, h *queueCommandHandler, mp
 		})
 
 		if err != nil {
-			log.Println("cannot send message:", err)
+			slog.ErrorContext(ctx, "Unable to send heads up message", slog.String("err", err.Error()))
 		}
 
 		// Change OSD font size
 		restoreFontSize := true
 		oldSize, err := mpvClient.GetPropertyFloat(ctx, "osd-font-size")
 		if err != nil {
-			log.Println("cannot get OSD font size:", err)
+			slog.WarnContext(ctx, "Unable to get OSD font size", slog.String("err", err.Error()))
 			restoreFontSize = false
 		} else {
 			if err = mpvClient.SetProperty(ctx, "osd-font-size", 30); err != nil {
-				log.Println("cannot set OSD font size:", err)
+				slog.WarnContext(ctx, "Unable to set OSD font size", slog.String("err", err.Error()))
 			}
 		}
 
@@ -172,11 +173,12 @@ func loopPlayMPV(ctx context.Context, q *queue.Queue, h *queueCommandHandler, mp
 					timeLeft -= time.Second
 					paused, err := mpvClient.GetPropertyBool(ctx, "pause")
 					if err != nil {
-						log.Println("cannot get pause state:", err)
+						slog.ErrorContext(ctx, "Unable to get pause state", slog.String("err", err.Error()))
 						continue
 					}
 					if !paused {
 						close(unpausedCh)
+						slog.DebugContext(ctx, "Detected false pause state, continuing")
 						return
 					} else {
 						showOSD(ctx, mpvClient, fmt.Sprintf("Starting in %s", timeLeft))
@@ -188,37 +190,41 @@ func loopPlayMPV(ctx context.Context, q *queue.Queue, h *queueCommandHandler, mp
 		}()
 
 		select {
+		case <-unpauseCheckCtx.Done():
+			cancelUnpauseCheck()
+			slog.ErrorContext(ctx, "Context cancelled", slog.String("err", unpauseCheckCtx.Err().Error()))
+			return
 		case <-unpausedCh:
 		case <-time.After(cfg.PlaybackTime):
 			if err = mpvClient.Play(ctx); err != nil {
 				cancelUnpauseCheck()
-				log.Println("cannot set pause:", err)
+				slog.ErrorContext(ctx, "Unable to set pause state", slog.String("err", err.Error()))
 				continue
 			}
 		}
-
 		cancelUnpauseCheck()
 
 		if restoreFontSize {
 			if err = mpvClient.SetProperty(ctx, "osd-font-size", oldSize); err != nil {
-				log.Println("cannot restore OSD font size:", err)
+				slog.ErrorContext(ctx, "Error restoring OSD font size", slog.String("err", err.Error()))
 			}
 		}
 
 		continueCh := make(chan struct{})
 		unobserve, err := mpvClient.ObserveProperty(ctx, "idle-active", func(value any) {
+			slog.DebugContext(ctx, "Observed change in idle-active state", slog.Bool("idle-active", value.(bool)))
 			if value.(bool) {
 				close(continueCh)
 			}
 		})
 		if err != nil {
-			log.Println("cannot observe idle-active:", err)
+			slog.ErrorContext(ctx, "Unable to observe idle-active property", slog.String("err", err.Error()))
 			continue
 		}
 
 		<-continueCh
 		if err = unobserve(); err != nil {
-			log.Println("cannot unobserve idle-active:", err)
+			slog.ErrorContext(ctx, "Unable to unobserve idle-active property", slog.String("err", err.Error()))
 		}
 	}
 }

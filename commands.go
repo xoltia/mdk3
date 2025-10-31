@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/url"
 	"slices"
 	"strconv"
@@ -241,7 +241,7 @@ func (h *queueCommandHandler) cmdEnqueue(ctx context.Context, data cmdroute.Comm
 
 	lastSong, err := tx.LastDequeued()
 	if err != nil && !errors.Is(err, queue.ErrSongNotFound) {
-		log.Printf("unable to get last dequeue: %s", err)
+		slog.ErrorContext(ctx, "Unable to get last dequeue", slog.String("err", err.Error()))
 	} else if err == nil {
 		queueDuration += lastSong.Duration - time.Since(lastSong.DequeuedAt)
 	}
@@ -261,13 +261,13 @@ func (h *queueCommandHandler) cmdEnqueue(ctx context.Context, data cmdroute.Comm
 
 	queued, err := tx.GetByID(queuedID)
 	if err != nil {
-		log.Println("cannot find queued song:", err)
+		slog.ErrorContext(ctx, "Cannot find queued song", slog.String("err", err.Error()))
 		return errorResponse(err)
 	}
 
 	queuePosition, err := tx.Count()
 	if err != nil {
-		log.Println("cannot get queue position:", err)
+		slog.ErrorContext(ctx, "Cannot get queue position", slog.String("err", err.Error()))
 		return errorResponse(err)
 	}
 
@@ -279,7 +279,7 @@ func (h *queueCommandHandler) cmdEnqueue(ctx context.Context, data cmdroute.Comm
 	}
 
 	if err = tx.Commit(); err != nil {
-		log.Println("cannot commit transaction:", err)
+		slog.ErrorContext(ctx, "Cannot commit transaction", slog.String("err", err.Error()))
 		return errorResponse(err)
 	}
 
@@ -317,7 +317,7 @@ func (h *queueCommandHandler) cmdList(ctx context.Context, data cmdroute.Command
 
 	empty, err := tx.Empty()
 	if err != nil {
-		log.Println("cannot check if queue is empty:", err)
+		slog.ErrorContext(ctx, "Cannot check if queue is empty", slog.String("err", err.Error()))
 		return errorResponse(err)
 	}
 
@@ -332,7 +332,7 @@ func (h *queueCommandHandler) cmdList(ctx context.Context, data cmdroute.Command
 
 	songs, err := tx.List(0, h.pageSize)
 	if err != nil {
-		log.Println("cannot list songs:", err)
+		slog.ErrorContext(ctx, "Cannot list songs", slog.String("err", err.Error()))
 		return errorResponse(err)
 	}
 
@@ -353,7 +353,7 @@ func (h *queueCommandHandler) cmdList(ctx context.Context, data cmdroute.Command
 
 	count, err := tx.Count()
 	if err != nil {
-		log.Println("cannot get queue count:", err)
+		slog.ErrorContext(ctx, "Cannot get queue count", slog.String("err", err.Error()))
 		return errorResponse(err)
 	}
 
@@ -375,7 +375,7 @@ func (h *queueCommandHandler) cmdList(ctx context.Context, data cmdroute.Command
 	}
 }
 
-func (h *queueCommandHandler) cmdRemove(_ context.Context, data cmdroute.CommandData) *api.InteractionResponseData {
+func (h *queueCommandHandler) cmdRemove(ctx context.Context, data cmdroute.CommandData) *api.InteractionResponseData {
 	var options struct {
 		ID string `discord:"id"`
 	}
@@ -390,7 +390,7 @@ func (h *queueCommandHandler) cmdRemove(_ context.Context, data cmdroute.Command
 	slug := options.ID
 	song, err := tx.GetBySlug(slug)
 	if err != nil && err != queue.ErrSongNotFound {
-		log.Println("cannot find song by slug:", err)
+		slog.ErrorContext(ctx, "Cannot find song by slug", slog.String("err", err.Error()))
 		return errorResponse(err)
 	}
 
@@ -412,12 +412,12 @@ func (h *queueCommandHandler) cmdRemove(_ context.Context, data cmdroute.Command
 	}
 
 	if err := tx.Remove(song.ID); err != nil {
-		log.Println("cannot remove song by slug:", err)
+		slog.ErrorContext(ctx, "Cannot remove song by slug", slog.String("err", err.Error()))
 		return errorResponse(err)
 	}
 
 	if err := tx.Commit(); err != nil {
-		log.Println("cannot commit transaction:", err)
+		slog.ErrorContext(ctx, "Cannot commit transaction", slog.String("err", err.Error()))
 		return errorResponse(err)
 	}
 
@@ -458,7 +458,7 @@ func (h *queueCommandHandler) cmdSwap(ctx context.Context, data cmdroute.Command
 	slug := options.ID
 	song, err := tx.GetBySlug(slug)
 	if err != nil && err != queue.ErrSongNotFound {
-		log.Println("cannot find song by slug:", err)
+		slog.ErrorContext(ctx, "Cannot find song by slug", slog.String("err", err.Error()))
 		return errorResponse(err)
 	}
 
@@ -487,12 +487,12 @@ func (h *queueCommandHandler) cmdSwap(ctx context.Context, data cmdroute.Command
 		Duration:     video.Duration,
 	})
 	if err != nil {
-		log.Println("cannot update song by slug:", err)
+		slog.ErrorContext(ctx, "Cannot update song by slug", slog.String("err", err.Error()))
 		return errorResponse(err)
 	}
 
 	if err := tx.Commit(); err != nil {
-		log.Println("cannot commit transaction:", err)
+		slog.ErrorContext(ctx, "Cannot commit transaction", slog.String("err", err.Error()))
 		return errorResponse(err)
 	}
 
@@ -508,7 +508,7 @@ func (h *queueCommandHandler) cmdSwap(ctx context.Context, data cmdroute.Command
 	}
 }
 
-func (h *queueCommandHandler) cmdMove(_ context.Context, data cmdroute.CommandData) *api.InteractionResponseData {
+func (h *queueCommandHandler) cmdMove(ctx context.Context, data cmdroute.CommandData) *api.InteractionResponseData {
 	var options struct {
 		ID       string `discord:"id"`
 		Position int    `discord:"position"`
@@ -532,7 +532,7 @@ func (h *queueCommandHandler) cmdMove(_ context.Context, data cmdroute.CommandDa
 	slug := options.ID
 	song, err := tx.GetBySlug(slug)
 	if err != nil && err != queue.ErrSongNotFound {
-		log.Println("cannot find song by slug:", err)
+		slog.ErrorContext(ctx, "Cannot find song by slug", slog.String("err", err.Error()))
 		return errorResponse(err)
 	}
 
@@ -546,7 +546,7 @@ func (h *queueCommandHandler) cmdMove(_ context.Context, data cmdroute.CommandDa
 
 	count, err := tx.Count()
 	if err != nil {
-		log.Println("cannot get queue count:", err)
+		slog.ErrorContext(ctx, "Cannot get queue count", slog.String("err", err.Error()))
 		return errorResponse(err)
 	}
 
@@ -560,12 +560,12 @@ func (h *queueCommandHandler) cmdMove(_ context.Context, data cmdroute.CommandDa
 
 	err = tx.Move(song.ID, options.Position-1)
 	if err != nil {
-		log.Println("cannot move song:", err)
+		slog.ErrorContext(ctx, "Cannot move song", slog.String("err", err.Error()))
 		return errorResponse(err)
 	}
 
 	if err := tx.Commit(); err != nil {
-		log.Println("cannot commit transaction:", err)
+		slog.ErrorContext(ctx, "Cannot commit transaction", slog.String("err", err.Error()))
 		return errorResponse(err)
 	}
 
@@ -605,13 +605,13 @@ func (h *queueCommandHandler) handleComponentInteraction(ev *discord.Interaction
 	switch parts[0] {
 	case "list_page":
 		pageNumber, _ := strconv.Atoi(parts[1])
-		return h.handleListPage(pageNumber)
+		return h.handleListPage(context.Background(), pageNumber)
 	default:
 		return nil
 	}
 }
 
-func (h *queueCommandHandler) handleListPage(pageNumber int) *api.InteractionResponse {
+func (h *queueCommandHandler) handleListPage(ctx context.Context, pageNumber int) *api.InteractionResponse {
 	embed := discord.NewEmbed()
 	embed.Title = "Current Queue"
 
@@ -620,7 +620,7 @@ func (h *queueCommandHandler) handleListPage(pageNumber int) *api.InteractionRes
 
 	empty, err := tx.Empty()
 	if err != nil {
-		log.Println("cannot check if queue is empty:", err)
+		slog.ErrorContext(ctx, "Cannot check if queue is empty", slog.String("err", err.Error()))
 		return &api.InteractionResponse{
 			Type: api.UpdateMessage,
 			Data: errorResponse(err),
@@ -649,7 +649,7 @@ func (h *queueCommandHandler) handleListPage(pageNumber int) *api.InteractionRes
 
 	count, err := tx.Count()
 	if err != nil {
-		log.Println("cannot get queue count:", err)
+		slog.ErrorContext(ctx, "Cannot get queue count", slog.String("err", err.Error()))
 		return &api.InteractionResponse{
 			Type: api.UpdateMessage,
 			Data: errorResponse(err),
@@ -673,7 +673,7 @@ func (h *queueCommandHandler) handleListPage(pageNumber int) *api.InteractionRes
 
 	songs, err := tx.List(start, h.pageSize)
 	if err != nil {
-		log.Println("cannot list songs:", err)
+		slog.ErrorContext(ctx, "Cannot list songs", slog.String("err", err.Error()))
 		return &api.InteractionResponse{
 			Type: api.UpdateMessage,
 			Data: errorResponse(err),
